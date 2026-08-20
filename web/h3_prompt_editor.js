@@ -68,7 +68,6 @@ function classify(type) {
   return "other";
 }
 
-
 function getGraphLink(linkId) {
   if (linkId == null) return null;
   const graph = app.graph;
@@ -170,11 +169,9 @@ function mediaViewUrlFromSource(origin, kind) {
 function sourcePreviewUrl(origin, kind) {
   if (!origin || kind === "audio") return "";
 
-  // Best path: loaders already know which input file is selected.
   const direct = mediaViewUrlFromSource(origin, kind);
   if (direct) return direct;
 
-  // Reuse an already-rendered preview from the source node without queueing this node.
   const imgs = Array.isArray(origin.imgs) ? origin.imgs : [];
   const img = imgs.find((x) => x?.src);
   if (img?.src) return img.src;
@@ -378,6 +375,7 @@ function createEditor(node) {
   let assets = [];
   let suppress = false;
   let atRange = null;
+  let activeTagChip = null;
 
   const rawValue = () => String(promptWidget?.value ?? "");
   const setRawValue = (v) => {
@@ -397,6 +395,24 @@ function createEditor(node) {
 
   function asset(kind, index) {
     return assets.find((x) => x.kind === kind && Number(x.index) === Number(index));
+  }
+
+  function positionMenu(anchor) {
+    const rootRect = root.getBoundingClientRect();
+    const rect = anchor?.getBoundingClientRect?.();
+    if (!rect) return;
+    const width = 270;
+    const left = Math.max(4, Math.min(rect.left - rootRect.left, rootRect.width - width - 4));
+    menu.style.left = `${left}px`;
+    menu.style.top = `${Math.max(4, rect.bottom - rootRect.top + 4)}px`;
+  }
+
+  function replaceTagChip(el, raw) {
+    if (!el || !visual.contains(el)) return;
+    el.dataset.raw = raw;
+    syncFromVisual();
+    render(rawValue());
+    closeMenu();
   }
 
   function assetChip(kind, index, raw) {
@@ -427,6 +443,24 @@ function createEditor(node) {
     t.textContent = item?.label || raw.slice(1, -1);
     el.append(t);
     el.title = item?.source_name ? `${raw}\n来源：${item.source_name}` : raw;
+    if (kind === "picture") {
+      el.style.cursor = "pointer";
+      el.addEventListener("mousedown", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        showSubjectPictureMenu(el, "picture", index);
+      });
+    }
+    return el;
+  }
+
+  function subjectChip(index, raw) {
+    const el = chip(raw, `◇ Subject ${index}`, "font-weight:600;background:rgba(255,255,255,.09);cursor:pointer;");
+    el.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      showSubjectPictureMenu(el, "subject", index);
+    });
     return el;
   }
 
@@ -470,7 +504,7 @@ function createEditor(node) {
       } else if (m[3]) {
         const kind = m[3].toLowerCase();
         if (["picture", "video", "audio"].includes(kind)) visual.append(assetChip(kind, Number(m[4]), token));
-        else visual.append(chip(token, `◇ Subject ${m[4]}`, "font-weight:600;background:rgba(255,255,255,.09);"));
+        else visual.append(subjectChip(Number(m[4]), token));
       } else if (/^\[Shot/i.test(token)) {
         visual.append(chip(token, `🎬 ${token.slice(1, -1)}`, "font-weight:600;"));
       } else if (/^\(S\d+\)$/i.test(token)) {
@@ -535,6 +569,7 @@ function createEditor(node) {
     menu.style.display = "none";
     menu.replaceChildren();
     atRange = null;
+    activeTagChip = null;
   }
 
   function atQuery() {
@@ -565,6 +600,94 @@ function createEditor(node) {
     render(rawValue());
     closeMenu();
     visual.focus();
+  }
+
+  function appendPictureAssetButton(item, onPick) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.style.cssText = "display:flex;width:100%;align-items:center;gap:8px;min-height:42px;padding:4px 6px;border:0;border-radius:5px;background:transparent;color:inherit;text-align:left;cursor:pointer;";
+    if (item.url) {
+      const img = document.createElement("img");
+      img.src = item.url;
+      img.style.cssText = "width:34px;height:34px;object-fit:cover;border-radius:4px;background:#111;";
+      b.append(img);
+    } else {
+      const i = document.createElement("div");
+      i.textContent = "▧";
+      i.style.cssText = "display:grid;place-items:center;width:34px;height:34px;border-radius:4px;background:rgba(255,255,255,.08);font:bold 15px sans-serif;";
+      b.append(i);
+    }
+    const texts = document.createElement("div");
+    texts.style.minWidth = "0";
+    const title = document.createElement("div");
+    title.textContent = `图片 ${item.index}`;
+    title.style.cssText = "font-size:11px;font-weight:600;";
+    const sub = document.createElement("div");
+    sub.textContent = item.source_name || item.input_name;
+    sub.style.cssText = "margin-top:2px;font-size:10px;opacity:.55;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+    texts.append(title, sub);
+    b.append(texts);
+    b.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      onPick(item);
+    });
+    menu.append(b);
+  }
+
+  function showSubjectPictureMenu(el, currentKind, index) {
+    refreshAssets();
+    activeTagChip = el;
+    atRange = null;
+    menu.replaceChildren();
+
+    const head = document.createElement("div");
+    head.style.cssText = "padding:6px 7px 7px;border-bottom:1px solid rgba(255,255,255,.10);";
+    const title = document.createElement("div");
+    title.textContent = `${currentKind === "subject" ? "主体" : "图片"} ${index} · 切换标签类型`;
+    title.style.cssText = "font-size:11px;font-weight:700;";
+    const switchRow = document.createElement("div");
+    switchRow.style.cssText = "display:flex;gap:5px;margin-top:7px;";
+
+    const subjectBtn = document.createElement("button");
+    subjectBtn.type = "button";
+    subjectBtn.textContent = "主体";
+    subjectBtn.style.cssText = `flex:1;height:28px;border-radius:5px;border:1px solid rgba(255,255,255,.13);background:${currentKind === "subject" ? "rgba(255,255,255,.17)" : "rgba(255,255,255,.06)"};color:inherit;cursor:pointer;font-size:11px;font-weight:600;`;
+    subjectBtn.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (currentKind === "subject") { closeMenu(); return; }
+      replaceTagChip(activeTagChip, `<Subject ${index}>`);
+    });
+
+    const pictureBtn = document.createElement("button");
+    pictureBtn.type = "button";
+    pictureBtn.textContent = "图片";
+    pictureBtn.style.cssText = `flex:1;height:28px;border-radius:5px;border:1px solid rgba(255,255,255,.13);background:${currentKind === "picture" ? "rgba(255,255,255,.17)" : "rgba(255,255,255,.06)"};color:inherit;cursor:pointer;font-size:11px;font-weight:600;`;
+    pictureBtn.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const same = asset("picture", index);
+      if (same) replaceTagChip(activeTagChip, `<Picture ${index}>`);
+    });
+
+    switchRow.append(subjectBtn, pictureBtn);
+    head.append(title, switchRow);
+    menu.append(head);
+
+    const pictures = assets.filter((a) => a.kind === "picture");
+    const note = document.createElement("div");
+    note.textContent = pictures.length ? "选择图片来源" : "当前没有连接图片";
+    note.style.cssText = "padding:7px 7px 4px;font-size:10px;opacity:.58;";
+    menu.append(note);
+    for (const item of pictures) {
+      appendPictureAssetButton(item, (picked) => {
+        replaceTagChip(activeTagChip, `<Picture ${picked.index}>`);
+      });
+    }
+
+    positionMenu(el);
+    menu.style.display = "block";
   }
 
   function showMenu(info) {
@@ -620,8 +743,14 @@ function createEditor(node) {
     if (e.key === "Escape") { closeMenu(); return; }
     const info = atQuery();
     if (info) { atRange = info.range; showMenu(info); }
-    else closeMenu();
+    else if (!activeTagChip) closeMenu();
   });
+
+  document.addEventListener("mousedown", (e) => {
+    if (menu.style.display === "none") return;
+    if (menu.contains(e.target) || activeTagChip?.contains?.(e.target)) return;
+    closeMenu();
+  }, true);
 
   const initial = rawValue();
   source.value = initial;
