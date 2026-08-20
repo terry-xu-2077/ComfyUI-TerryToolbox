@@ -7,6 +7,40 @@ function isTarget(node) {
     .some((value) => String(value || "") === NODE_ID);
 }
 
+function refreshTimelineAssets(node) {
+  if (!isTarget(node)) return;
+  node.__terryH3ShotTimeline?.refreshAssets?.();
+  node.__terryTimelineSyncChips?.();
+}
+
+function bindViewRefresh(node) {
+  if (!isTarget(node)) return false;
+  const root = node.__terryH3ShotTimeline?.root;
+  if (!root) return false;
+  if (root.__terryTimelineViewRefreshBound) return true;
+  root.__terryTimelineViewRefreshBound = true;
+
+  const refreshSoon = () => requestAnimationFrame(() => refreshTimelineAssets(node));
+  root.addEventListener("click", (event) => {
+    if (event.target?.closest?.(".terry-tl-shot,.terry-tl-meta")) refreshSoon();
+  });
+  root.addEventListener("focusin", (event) => {
+    if (event.target?.closest?.(".terry-tl-card .terry-tl-rich")) refreshSoon();
+  });
+  return true;
+}
+
+function bindSoon(node) {
+  if (!isTarget(node)) return;
+  let attempts = 0;
+  const run = () => {
+    attempts += 1;
+    if (bindViewRefresh(node) || attempts >= 12) return;
+    setTimeout(run, Math.min(720, attempts * 60));
+  };
+  setTimeout(run, 0);
+}
+
 function installStyle() {
   if (document.getElementById("terry-h3-timeline-color-theme")) return;
   const style = document.createElement("style");
@@ -29,6 +63,9 @@ function installStyle() {
   --tl-pink:#f472b6;
   --tl-pink-soft:rgba(244,114,182,.09);
   --tl-pink-border:rgba(244,114,182,.24);
+  max-height:none!important;
+  overflow:visible!important;
+  padding-right:7px!important;
 }
 
 /* Header — neutral with an orange timeline identity accent. */
@@ -44,7 +81,7 @@ function installStyle() {
 .terry-h3-timeline-root .terry-tl-parse-button{border-color:var(--tl-orange-border);background:var(--tl-orange-soft);color:#ffd89a}
 .terry-h3-timeline-root .terry-tl-parse-button:hover{background:rgba(245,158,11,.22)}
 
-/* Global description — cool blue. */
+/* Global description — cool blue, scrolls only inside its own editor. */
 .terry-h3-timeline-root .terry-tl-section{
   padding:7px;
   border:1px solid var(--tl-blue-border);
@@ -53,6 +90,9 @@ function installStyle() {
 }
 .terry-h3-timeline-root .terry-tl-section>label{color:#a9d0ff;opacity:.92;font-weight:700}
 .terry-h3-timeline-root .terry-tl-section>.terry-tl-rich{
+  max-height:180px;
+  overflow-y:auto;
+  overscroll-behavior:contain;
   border-color:rgba(96,165,250,.22);
   background:rgba(22,50,84,.22);
 }
@@ -61,7 +101,7 @@ function installStyle() {
   box-shadow:0 0 0 1px rgba(96,165,250,.12);
 }
 
-/* Timeline — intentionally orange and visually dominant. */
+/* Timeline — fixed in place, intentionally orange and visually dominant. */
 .terry-h3-timeline-root .terry-tl-lane-head{
   margin-top:9px;
   padding:0 2px;
@@ -95,8 +135,18 @@ function installStyle() {
 .terry-h3-timeline-root .terry-tl-seam:after{background:#ffb238;box-shadow:0 0 0 1px rgba(85,44,0,.55)}
 .terry-h3-timeline-root .terry-tl-seam.is-active:after{background:#ffe0a3;box-shadow:0 0 8px rgba(245,158,11,.55)}
 
-/* Shot descriptions — purple cards, distinct from the orange timing strip. */
-.terry-h3-timeline-root .terry-tl-cards{padding:6px;border:1px solid var(--tl-purple-border);border-radius:7px;background:rgba(192,132,252,.035)}
+/* Shot descriptions — only this area scrolls vertically. */
+.terry-h3-timeline-root .terry-tl-cards{
+  max-height:390px;
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+  padding:6px;
+  border:1px solid var(--tl-purple-border);
+  border-radius:7px;
+  background:rgba(192,132,252,.035);
+}
 .terry-h3-timeline-root .terry-tl-card{
   border-color:rgba(192,132,252,.18);
   background:var(--tl-purple-soft);
@@ -106,6 +156,9 @@ function installStyle() {
   background:rgba(192,132,252,.16);
 }
 .terry-h3-timeline-root .terry-tl-card .terry-tl-rich{
+  max-height:180px;
+  overflow-y:auto;
+  overscroll-behavior:contain;
   border-color:rgba(192,132,252,.18);
   background:rgba(46,26,66,.20);
 }
@@ -138,11 +191,13 @@ function installStyle() {
 .terry-h3-timeline-root .terry-tl-chip.is-speaker{background:rgba(255,120,160,.14);color:#ffcbdb;border-color:rgba(255,120,160,.26)}
 .terry-h3-timeline-root .terry-tl-chip.is-dialogue{background:rgba(0,226,187,.14);color:#befff4;border-color:rgba(0,226,187,.25)}
 
-/* Scrollbar gets the timeline accent without becoming loud. */
-.terry-h3-timeline-root::-webkit-scrollbar{width:9px}
-.terry-h3-timeline-root::-webkit-scrollbar-track{background:rgba(0,0,0,.12)}
-.terry-h3-timeline-root::-webkit-scrollbar-thumb{background:rgba(245,158,11,.32);border-radius:8px}
-.terry-h3-timeline-root::-webkit-scrollbar-thumb:hover{background:rgba(245,158,11,.48)}
+/* Scrollbars belong only to text/card areas, never to the whole node. */
+.terry-h3-timeline-root .terry-tl-cards::-webkit-scrollbar,
+.terry-h3-timeline-root .terry-tl-rich::-webkit-scrollbar{width:8px}
+.terry-h3-timeline-root .terry-tl-cards::-webkit-scrollbar-track,
+.terry-h3-timeline-root .terry-tl-rich::-webkit-scrollbar-track{background:rgba(0,0,0,.10)}
+.terry-h3-timeline-root .terry-tl-cards::-webkit-scrollbar-thumb,
+.terry-h3-timeline-root .terry-tl-rich::-webkit-scrollbar-thumb{background:rgba(245,158,11,.26);border-radius:8px}
 `;
   document.head.append(style);
 }
@@ -153,11 +208,15 @@ app.registerExtension({
   beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData?.name !== NODE_ID || nodeType.prototype.__terryTimelineColorThemeInstalled) return;
     nodeType.prototype.__terryTimelineColorThemeInstalled = true;
-    const created = nodeType.prototype.onNodeCreated;
-    nodeType.prototype.onNodeCreated = function() {
-      const result = created?.apply(this, arguments);
-      if (isTarget(this)) this.setDirtyCanvas?.(true, true);
-      return result;
-    };
+    for (const hook of ["onNodeCreated", "onAdded", "onConfigure"]) {
+      const original = nodeType.prototype[hook];
+      nodeType.prototype[hook] = function() {
+        const result = original?.apply(this, arguments);
+        bindSoon(this);
+        if (isTarget(this)) this.setDirtyCanvas?.(true, true);
+        return result;
+      };
+    }
   },
+  loadedGraphNode(node) { if (isTarget(node)) bindSoon(node); },
 });
