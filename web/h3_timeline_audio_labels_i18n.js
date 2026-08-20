@@ -25,48 +25,51 @@ function localizeRoot(root) {
     if (!text) continue;
     const raw = String(text.dataset.terryRawLabel || text.textContent || "").trim();
     if (!text.dataset.terryRawLabel) text.dataset.terryRawLabel = raw;
+
+    let nextText = null;
+    let nextTitle = null;
     if (raw === "overall_soundscape") {
-      text.textContent = zh ? "整体声音环境" : "overall_soundscape";
-      option.title = zh ? "对应 H3 字段 overall_soundscape；仅改变界面显示名称，不改变输出格式。" : "H3 field: overall_soundscape";
+      nextText = zh ? "整体声音环境" : "overall_soundscape";
+      nextTitle = zh ? "对应 H3 字段 overall_soundscape；仅改变界面显示名称，不改变输出格式。" : "H3 field: overall_soundscape";
     } else if (raw === "non_diegetic_music") {
-      text.textContent = zh ? "非剧情内音乐" : "non_diegetic_music";
-      option.title = zh ? "对应 H3 字段 non_diegetic_music；仅改变界面显示名称，不改变输出格式。" : "H3 field: non_diegetic_music";
+      nextText = zh ? "非剧情内音乐" : "non_diegetic_music";
+      nextTitle = zh ? "对应 H3 字段 non_diegetic_music；仅改变界面显示名称，不改变输出格式。" : "H3 field: non_diegetic_music";
     }
+
+    // Avoid producing DOM mutations when nothing actually changes.
+    if (nextText != null && text.textContent !== nextText) text.textContent = nextText;
+    if (nextTitle != null && option.title !== nextTitle) option.title = nextTitle;
   }
 }
 
 function installSoon(node) {
   if (!isTarget(node)) return;
-  for (const delay of [0, 60, 180, 500]) {
+  // Only touch this node's own DOM. A document-wide MutationObserver was too
+  // expensive in ComfyUI because the canvas/UI continuously mutates DOM.
+  for (const delay of [0, 120, 400]) {
     setTimeout(() => localizeRoot(node.__terryH3ShotTimeline?.root), delay);
   }
 }
 
 app.registerExtension({
   name: "TerryToolbox.H3TimelineAudioLabelsI18n",
-  setup() {
-    const observer = new MutationObserver((records) => {
-      for (const record of records) {
-        for (const added of record.addedNodes || []) {
-          if (added?.nodeType !== Node.ELEMENT_NODE) continue;
-          if (added.matches?.(".terry-h3-timeline-root")) localizeRoot(added);
-          for (const root of added.querySelectorAll?.(".terry-h3-timeline-root") || []) localizeRoot(root);
-        }
-      }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-  },
   beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData?.name !== NODE_ID || nodeType.prototype.__terryTimelineAudioLabelsI18n) return;
     nodeType.prototype.__terryTimelineAudioLabelsI18n = true;
-    for (const hook of ["onNodeCreated", "onAdded", "onConfigure"]) {
-      const old = nodeType.prototype[hook];
-      nodeType.prototype[hook] = function() {
-        const result = old?.apply(this, arguments);
-        installSoon(this);
-        return result;
-      };
-    }
+
+    const created = nodeType.prototype.onNodeCreated;
+    nodeType.prototype.onNodeCreated = function() {
+      const result = created?.apply(this, arguments);
+      installSoon(this);
+      return result;
+    };
+
+    const configure = nodeType.prototype.onConfigure;
+    nodeType.prototype.onConfigure = function() {
+      const result = configure?.apply(this, arguments);
+      installSoon(this);
+      return result;
+    };
   },
   loadedGraphNode(node) {
     installSoon(node);
