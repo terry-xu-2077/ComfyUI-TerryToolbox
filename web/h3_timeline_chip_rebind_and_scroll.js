@@ -17,12 +17,8 @@ function localeIsZh() {
     return locale === "zh" || locale.startsWith("zh-");
   } catch { return false; }
 }
-
 function t(zh, en) { return localeIsZh() ? zh : en; }
-
-function graphNode(node, id) {
-  return (node?.graph || app.graph)?.getNodeById?.(Number(id)) || null;
-}
+function graphNode(node, id) { return (node?.graph || app.graph)?.getNodeById?.(Number(id)) || null; }
 
 function sourceKind(source, slot = 0, fallback = "") {
   const raw = String(source?.outputs?.[slot]?.type || fallback || "").toUpperCase();
@@ -32,11 +28,9 @@ function sourceKind(source, slot = 0, fallback = "") {
 }
 
 function filename(source, kind) {
-  const preferred = kind === "picture"
-    ? ["image", "filename", "file"]
-    : kind === "video"
-      ? ["video", "file", "filename", "video_file", "videofile"]
-      : ["audio", "file", "filename", "audio_file", "audiofile"];
+  const preferred = kind === "picture" ? ["image", "filename", "file"]
+    : kind === "video" ? ["video", "file", "filename", "video_file", "videofile"]
+    : ["audio", "file", "filename", "audio_file", "audiofile"];
   const widgets = Array.isArray(source?.widgets) ? source.widgets : [];
   const ordered = [...widgets.filter((w) => preferred.includes(String(w?.name || "").toLowerCase())), ...widgets];
   for (const w of ordered) {
@@ -80,24 +74,16 @@ function mediaAssets(node) {
     counts[kind] = (counts[kind] || 0) + 1;
     const index = counts[kind];
     const type = kind === "picture" ? "Picture" : kind === "video" ? "Video" : "Audio";
-    out.push({
-      key,
-      kind,
-      index,
-      tag: `<${type} ${index}>`,
-      label: `${type} ${index}`,
+    out.push({ key, kind, index, tag: `<${type} ${index}>`, label: `${type} ${index}`,
       name: filename(source, kind).split(/[\\/]/).pop() || source.title || `${type} ${index}`,
-      preview: preview(source, kind),
-    });
+      preview: preview(source, kind) });
   }
   return out;
 }
 
 function bindings(node) {
   node.properties ||= {};
-  if (!node.properties[BINDINGS_PROP] || typeof node.properties[BINDINGS_PROP] !== "object" || Array.isArray(node.properties[BINDINGS_PROP])) {
-    node.properties[BINDINGS_PROP] = {};
-  }
+  if (!node.properties[BINDINGS_PROP] || typeof node.properties[BINDINGS_PROP] !== "object" || Array.isArray(node.properties[BINDINGS_PROP])) node.properties[BINDINGS_PROP] = {};
   return node.properties[BINDINGS_PROP];
 }
 
@@ -105,40 +91,43 @@ function subjectNumber(chip) {
   const m = String(chip?.dataset?.raw || "").match(/^<Subject\s+(\d+)>$/i);
   return m ? Number(m[1]) : null;
 }
-
 function parseMediaChip(chip) {
   const m = String(chip?.dataset?.raw || "").match(/^<(Picture|Video|Audio)\s+(\d+)>$/i);
-  if (!m) return null;
-  return { type: m[1].toLowerCase(), number: Number(m[2]) };
+  return m ? { type: m[1].toLowerCase(), number: Number(m[2]) } : null;
 }
 
-function boundAsset(node, number) {
-  const key = bindings(node)[String(number)];
-  return mediaAssets(node).find((asset) => asset.key === key) || null;
-}
-
-function autoBindFromGlobal(node, root, number) {
-  if (bindings(node)[String(number)]) return;
+function serializeGlobal(root) {
   const editor = root?.querySelector?.(".terry-tl-section .terry-tl-rich");
-  if (!editor) return;
   let raw = "";
-  for (const child of editor.childNodes || []) raw += child.nodeType === Node.TEXT_NODE ? child.nodeValue : (child.dataset?.raw ?? child.innerText ?? "");
+  for (const child of editor?.childNodes || []) raw += child.nodeType === Node.TEXT_NODE ? child.nodeValue : (child.dataset?.raw ?? child.innerText ?? "");
+  return raw;
+}
+
+function autoBindFromGlobal(node, root, number, assets) {
+  if (bindings(node)[String(number)]) return;
+  const raw = serializeGlobal(root);
   const marker = new RegExp(`<Subject\\s+${number}>\\s*(?:is\\b|[:：-])?\\s*([\\s\\S]*?)(?=\\n\\s*<Subject\\s+\\d+>|$)`, "i");
   const def = raw.match(marker)?.[1] || "";
   const ref = def.match(/<(Picture|Video)\s+(\d+)>/i);
   if (!ref) return;
   const kind = ref[1].toLowerCase() === "picture" ? "picture" : "video";
-  const asset = mediaAssets(node).find((item) => item.kind === kind && item.index === Number(ref[2]));
+  const asset = assets.find((item) => item.kind === kind && item.index === Number(ref[2]));
   if (asset) bindings(node)[String(number)] = asset.key;
 }
 
-function decorateSubject(node, root, chip) {
+function decorateSubject(node, root, chip, assets) {
   const number = subjectNumber(chip);
   if (!number) return;
-  autoBindFromGlobal(node, root, number);
-  const asset = boundAsset(node, number);
+  autoBindFromGlobal(node, root, number, assets);
+  const key = bindings(node)[String(number)] || "";
+  const asset = assets.find((item) => item.key === key) || null;
+  const signature = `${number}|${asset?.key || "none"}|${asset?.preview || ""}`;
+
   chip.classList.add("terry-h3-chip", "terry-h3-subject-asset-chip", "terry-h3-strong", "terry-h3-type-subject");
   chip.classList.remove("is-subject");
+  if (chip.dataset.terryDecorated === signature) return;
+  chip.dataset.terryDecorated = signature;
+
   chip.replaceChildren();
   if (asset?.preview) {
     const img = document.createElement("img"); img.src = asset.preview; img.alt = ""; img.draggable = false; chip.append(img);
@@ -159,8 +148,10 @@ function decorateMedia(chip) {
 }
 
 function decorateRoot(node, root) {
+  if (!root?.isConnected && !root) return;
+  const assets = mediaAssets(node);
   for (const chip of root?.querySelectorAll?.(".terry-tl-chip") || []) {
-    if (subjectNumber(chip)) decorateSubject(node, root, chip);
+    if (subjectNumber(chip)) decorateSubject(node, root, chip, assets);
     else decorateMedia(chip);
   }
 }
@@ -171,19 +162,23 @@ function closeMenu(node) {
 }
 
 function renderAssetItem(asset, onPick) {
-  const item = document.createElement("button");
-  item.type = "button";
-  item.className = "terry-h3-rebind-item";
+  const item = document.createElement("button"); item.type = "button"; item.className = "terry-h3-rebind-item";
   const thumb = document.createElement("span"); thumb.className = "terry-h3-rebind-thumb";
-  if (asset.preview && asset.kind !== "audio") {
-    const img = document.createElement("img"); img.src = asset.preview; img.alt = ""; thumb.append(img);
-  } else thumb.textContent = asset.kind === "audio" ? "♪" : asset.kind === "video" ? "▶" : "▧";
-  const text = document.createElement("span");
-  const main = document.createElement("b"); main.textContent = asset.label;
-  const sub = document.createElement("small"); sub.textContent = asset.name;
-  text.append(main, sub); item.append(thumb, text);
+  if (asset.preview && asset.kind !== "audio") { const img = document.createElement("img"); img.src = asset.preview; img.alt = ""; thumb.append(img); }
+  else thumb.textContent = asset.kind === "audio" ? "♪" : asset.kind === "video" ? "▶" : "▧";
+  const text = document.createElement("span"); const main = document.createElement("b"); main.textContent = asset.label;
+  const sub = document.createElement("small"); sub.textContent = asset.name; text.append(main, sub); item.append(thumb, text);
   item.addEventListener("pointerdown", (event) => { event.preventDefault(); event.stopPropagation(); onPick(asset); });
   return item;
+}
+
+function positionMenu(menu, chip, width = 300) {
+  const rect = chip.getBoundingClientRect();
+  let left = Math.max(8, Math.min(rect.left, innerWidth - width - 8));
+  let top = rect.bottom + 6;
+  const height = Math.min(340, menu.offsetHeight || 260);
+  if (top + height > innerHeight - 8) top = Math.max(8, rect.top - height - 6);
+  menu.style.left = `${Math.round(left)}px`; menu.style.top = `${Math.round(top)}px`;
 }
 
 function openSubjectMenu(node, root, chip, number) {
@@ -192,26 +187,13 @@ function openSubjectMenu(node, root, chip, number) {
   const menu = document.createElement("div"); menu.className = "terry-h3-rebind-menu"; node.__terryTimelineRebindMenu = menu;
   const head = document.createElement("div"); head.className = "terry-h3-rebind-head";
   const title = document.createElement("b"); title.textContent = t(`Subject ${number} · 切换来源资产`, `Subject ${number} · Change Source Asset`);
-  const hint = document.createElement("small"); hint.textContent = t("仅显示图片 / 视频", "Showing images / videos only");
-  head.append(title, hint); menu.append(head);
-  if (!options.length) {
-    const empty = document.createElement("div"); empty.className = "terry-h3-rebind-empty"; empty.textContent = t("没有可用的兼容资产", "No compatible assets available"); menu.append(empty);
-  }
+  const hint = document.createElement("small"); hint.textContent = t("仅显示图片 / 视频", "Showing images / videos only"); head.append(title, hint); menu.append(head);
+  if (!options.length) { const empty = document.createElement("div"); empty.className = "terry-h3-rebind-empty"; empty.textContent = t("没有可用的兼容资产", "No compatible assets available"); menu.append(empty); }
   for (const asset of options) menu.append(renderAssetItem(asset, (picked) => {
     bindings(node)[String(number)] = picked.key;
-    app.graph?.change?.();
-    closeMenu(node);
-    decorateRoot(node, root);
-    node.__terryH3ShotTimeline?.save?.();
+    closeMenu(node); decorateRoot(node, root); node.__terryH3ShotTimeline?.save?.(); app.graph?.change?.();
   }));
-  document.body.append(menu);
-  const rect = chip.getBoundingClientRect();
-  const width = 300;
-  let left = rect.left, top = rect.bottom + 6;
-  if (left + width > innerWidth - 8) left = innerWidth - width - 8;
-  const height = Math.min(340, menu.offsetHeight || 260);
-  if (top + height > innerHeight - 8) top = Math.max(8, rect.top - height - 6);
-  menu.style.left = `${Math.max(8, Math.round(left))}px`; menu.style.top = `${Math.max(8, Math.round(top))}px`;
+  document.body.append(menu); positionMenu(menu, chip);
 }
 
 function openMediaMenu(node, root, chip, info) {
@@ -221,10 +203,10 @@ function openMediaMenu(node, root, chip, info) {
   const menu = document.createElement("div"); menu.className = "terry-h3-rebind-menu"; node.__terryTimelineRebindMenu = menu;
   const head = document.createElement("div"); head.className = "terry-h3-rebind-head";
   const title = document.createElement("b"); title.textContent = t(`${chip.dataset.raw.slice(1, -1)} · 切换资产`, `${chip.dataset.raw.slice(1, -1)} · Change Asset`);
-  const hint = document.createElement("small"); hint.textContent = t(`仅显示${kind === "picture" ? "图片" : kind === "video" ? "视频" : "音频"}`, `Showing ${kind}`);
-  head.append(title, hint); menu.append(head);
+  const hint = document.createElement("small"); hint.textContent = t(`仅显示${kind === "picture" ? "图片" : kind === "video" ? "视频" : "音频"}`, `Showing ${kind}`); head.append(title, hint); menu.append(head);
   for (const asset of options) menu.append(renderAssetItem(asset, (picked) => {
     chip.dataset.raw = picked.tag;
+    chip.dataset.terryDecorated = "";
     chip.replaceChildren();
     if (picked.preview && picked.kind !== "audio") { const img = document.createElement("img"); img.src = picked.preview; img.alt = ""; chip.append(img); }
     const label = document.createElement("span"); label.textContent = picked.label; chip.append(label);
@@ -232,10 +214,7 @@ function openMediaMenu(node, root, chip, info) {
     chip.closest(".terry-tl-rich")?.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: null }));
     decorateRoot(node, root);
   }));
-  document.body.append(menu);
-  const rect = chip.getBoundingClientRect();
-  menu.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - 308))}px`;
-  menu.style.top = `${Math.max(8, Math.min(rect.bottom + 6, innerHeight - Math.min(340, menu.offsetHeight || 260) - 8))}px`;
+  document.body.append(menu); positionMenu(menu, chip);
 }
 
 function installNode(node) {
@@ -245,17 +224,29 @@ function installNode(node) {
   decorateRoot(node, root);
   if (root.__terryTimelineChipRebindBound) return true;
   root.__terryTimelineChipRebindBound = true;
+
   root.addEventListener("pointerdown", (event) => {
     const chip = event.target?.closest?.(".terry-tl-chip");
     if (!chip || !root.contains(chip)) return;
-    const number = subjectNumber(chip);
-    const media = parseMediaChip(chip);
+    const number = subjectNumber(chip); const media = parseMediaChip(chip);
     if (!number && !media) return;
     event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation?.();
-    if (number) openSubjectMenu(node, root, chip, number);
-    else openMediaMenu(node, root, chip, media);
+    if (number) openSubjectMenu(node, root, chip, number); else openMediaMenu(node, root, chip, media);
   }, true);
-  const observer = new MutationObserver(() => decorateRoot(node, root));
+
+  // The old observer called decorateRoot(), which replaced Subject chip children.
+  // Those replacements triggered the same observer again, creating an infinite DOM loop
+  // during parser restore. Disconnect while decorating and debounce to one frame.
+  let raf = 0;
+  const observer = new MutationObserver(() => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      observer.disconnect();
+      try { decorateRoot(node, root); }
+      finally { observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-raw"] }); }
+    });
+  });
   observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-raw"] });
   root.__terryTimelineChipObserver = observer;
   return true;
@@ -264,25 +255,19 @@ function installNode(node) {
 function installSoon(node) {
   if (!isTarget(node)) return;
   let attempts = 0;
-  const run = () => {
-    attempts += 1;
-    if (installNode(node) || attempts >= 18) return;
-    setTimeout(run, Math.min(900, attempts * 70));
-  };
+  const run = () => { attempts += 1; if (installNode(node) || attempts >= 18) return; setTimeout(run, Math.min(900, attempts * 70)); };
   setTimeout(run, 0);
 }
 
 function installStyle() {
   if (document.getElementById("terry-h3-timeline-chip-rebind-scroll-style")) return;
-  const style = document.createElement("style");
-  style.id = "terry-h3-timeline-chip-rebind-scroll-style";
+  const style = document.createElement("style"); style.id = "terry-h3-timeline-chip-rebind-scroll-style";
   style.textContent = `
 .terry-h3-timeline-root{max-height:720px!important;overflow-y:auto!important;overflow-x:hidden!important;scrollbar-gutter:stable;overscroll-behavior:contain;padding-right:5px!important}
 .terry-h3-timeline-root::-webkit-scrollbar{width:8px}.terry-h3-timeline-root::-webkit-scrollbar-track{background:rgba(255,255,255,.025);border-radius:8px}.terry-h3-timeline-root::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:8px}.terry-h3-timeline-root::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.25)}
 .terry-h3-timeline-root .terry-h3-chip{margin:1px 2px;vertical-align:middle}.terry-h3-timeline-root .terry-h3-media-chip,.terry-h3-timeline-root .terry-h3-subject-asset-chip{cursor:pointer!important}
 .terry-h3-timeline-root .terry-h3-subject-asset-chip img{width:26px;height:26px;object-fit:cover;border-radius:3px}
-.terry-h3-timeline-root .terry-h3-media-chip:hover,.terry-h3-timeline-root .terry-h3-subject-asset-chip:hover{box-shadow:inset 0 0 0 1px rgba(0,226,187,.38),0 0 0 1px rgba(0,226,187,.12)!important}
-`;
+.terry-h3-timeline-root .terry-h3-media-chip:hover,.terry-h3-timeline-root .terry-h3-subject-asset-chip:hover{box-shadow:inset 0 0 0 1px rgba(0,226,187,.38),0 0 0 1px rgba(0,226,187,.12)!important}`;
   document.head.append(style);
 }
 
@@ -306,11 +291,7 @@ app.registerExtension({
     nodeType.prototype.__terryTimelineChipRebindInstalled = true;
     for (const hook of ["onNodeCreated", "onAdded", "onConfigure"]) {
       const old = nodeType.prototype[hook];
-      nodeType.prototype[hook] = function() {
-        const result = old?.apply(this, arguments);
-        installSoon(this);
-        return result;
-      };
+      nodeType.prototype[hook] = function() { const result = old?.apply(this, arguments); installSoon(this); return result; };
     }
   },
   loadedGraphNode(node) { if (isTarget(node)) installSoon(node); },
