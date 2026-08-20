@@ -28,7 +28,7 @@ class H3PromptEditor(io.ComfyNode):
             input=io.AnyType.Input(
                 "asset",
                 display_name="参考",
-                tooltip="可连接 IMAGE / VIDEO / AUDIO；连接后自动增加下一个输入。",
+                tooltip="可连接 IMAGE / VIDEO / AUDIO；前端显示为一个可接受多条虚拟连线的参考入口。",
             ),
             prefix="asset",
             min=1,
@@ -41,10 +41,16 @@ class H3PromptEditor(io.ComfyNode):
             search_aliases=["MiniMax H3", "H3 prompt", "H3 提示词", "reference prompt"],
             description=(
                 "可视化编写 MiniMax H3 提示词；支持动态数量图片、视频、音频参考；"
-                "输出始终为标准 H3 原文 STRING。"
+                "@ 插入媒体，/ 打开 H3 语法菜单；输出始终为标准 H3 原文 STRING。"
             ),
             inputs=[
                 io.String.Input("prompt", display_name="H3 原文", multiline=True, default=""),
+                io.Boolean.Input(
+                    "visual_preview",
+                    display_name="可视化预览",
+                    default=True,
+                    tooltip="开启：标签可视化；关闭：显示纯文本 H3 原文。",
+                ),
                 io.Autogrow.Input("assets", template=asset_template),
             ],
             hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
@@ -52,13 +58,18 @@ class H3PromptEditor(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, prompt: str, assets: io.Autogrow.Type) -> io.NodeOutput:
+    def execute(
+        cls,
+        prompt: str,
+        visual_preview: bool = True,
+        assets: io.Autogrow.Type | None = None,
+    ) -> io.NodeOutput:
         counts = {"picture": 0, "video": 0, "audio": 0, "other": 0}
         result = []
         temp = Path(folder_paths.get_temp_directory())
         temp.mkdir(parents=True, exist_ok=True)
 
-        for input_name, value in assets.items():
+        for input_name, value in (assets or {}).items():
             kind = _kind(value)
             counts[kind] += 1
             idx = counts[kind]
