@@ -4,10 +4,20 @@ from comfy_api.latest import io
 
 
 class H3ShotTimeline(io.ComfyNode):
-    """Simple visual timeline for the H3 detailed_description section."""
+    """Lightweight visual editor for H3 detailed_description and its timeline-adjacent audio fields."""
 
     @classmethod
     def define_schema(cls):
+        asset_template = io.Autogrow.TemplatePrefix(
+            input=io.AnyType.Input(
+                "asset",
+                display_name="参考",
+                tooltip="可连接 IMAGE / VIDEO / AUDIO；前端使用一个多路参考入口管理这些连接。",
+            ),
+            prefix="asset",
+            min=1,
+        )
+
         return io.Schema(
             node_id="TerryH3ShotTimeline",
             display_name="Terry | H3 镜头时间轴",
@@ -20,13 +30,13 @@ class H3ShotTimeline(io.ComfyNode):
                 "detailed_description",
             ],
             description=(
-                "将 MiniMax H3 的 detailed_description 独立为简易镜头时间轴。"
-                "支持增删镜头、拖动镜头接缝调整时长，总时长默认 15 秒、最大 30 秒。"
+                "轻量编辑 MiniMax H3 的 detailed_description：支持多路参考素材、标签化镜头描述、"
+                "镜头增删/排序/拖动接缝调时长，以及可选 overall_soundscape / non_diegetic_music。"
             ),
             inputs=[
                 io.String.Input(
-                    "detailed_description",
-                    display_name="detailed_description",
+                    "compiled_prompt",
+                    display_name="H3 时间轴原文",
                     multiline=True,
                     default="detailed_description:\n",
                 ),
@@ -44,25 +54,27 @@ class H3ShotTimeline(io.ComfyNode):
                     multiline=True,
                     default="",
                 ),
+                io.Autogrow.Input("assets", template=asset_template),
             ],
             outputs=[
-                io.String.Output("detailed_description", display_name="detailed_description"),
+                io.String.Output("prompt", display_name="H3 Timeline Prompt"),
             ],
         )
 
     @classmethod
     def execute(
         cls,
-        detailed_description: str,
+        compiled_prompt: str,
         duration: int = 15,
         timeline_state: str = "",
+        assets: io.Autogrow.Type | None = None,
     ) -> io.NodeOutput:
-        # The browser editor owns the timeline state and continuously compiles it
-        # back into standards-compliant H3 plaintext. The backend deliberately
-        # stays dumb so the output can be used anywhere a normal STRING is used.
-        text = str(detailed_description or "").strip()
+        # The browser owns the visual state and continuously compiles it back to
+        # standards-compliant H3 plaintext. Assets are transport-only references;
+        # their values are intentionally unused by this backend node.
+        text = str(compiled_prompt or "").strip()
         if not text:
             text = "detailed_description:"
-        if not text.lower().startswith("detailed_description:"):
+        if "detailed_description:" not in text.lower():
             text = f"detailed_description:\n{text}"
         return io.NodeOutput(text)
