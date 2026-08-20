@@ -19,6 +19,8 @@ function isTarget(node) {
 const EN = new Map([
   ["引用角色", "Reference Role"],
   ["同一资产可以有不同 H3 角色", "One asset can serve different H3 roles"],
+  ["主体 · 内容", "Subject · Content"],
+  ["画面 · 图片", "Picture · Frame"],
   ["Subject · 内容", "Subject · Content"],
   ["Picture · 画面", "Picture · Frame"],
   ["从视频中抽取人物、物体、场景、动作、表情或风格，作为后续镜头可复用的内容单元。", "Extract a person, object, scene, action, expression, or style from the video as reusable content."],
@@ -48,17 +50,49 @@ const EN = new Map([
   ["输入对白…", "Enter dialogue…"],
 ]);
 
+const ZH = new Map([
+  ["Reference Role", "引用角色"],
+  ["One asset can serve different H3 roles", "同一资产可以有不同 H3 角色"],
+  ["Subject · Content", "主体 · 内容"],
+  ["Picture · Frame", "画面 · 图片"],
+  ["Subject · 内容", "主体 · 内容"],
+  ["Picture · 画面", "画面 · 图片"],
+  ["+ Subject", "+ 主体"],
+  ["+ New Subject", "+ 新主体"],
+  ["+ 新 Subject", "+ 新主体"],
+]);
+
 function translateString(text) {
   const raw = String(text || "");
-  if (!raw || isZh()) return raw;
+  if (!raw) return raw;
+
+  if (isZh()) {
+    if (ZH.has(raw)) return ZH.get(raw);
+    let m = raw.match(/^Subject\s*(\d+)$/i);
+    if (m) return `主体 ${m[1]}`;
+    m = raw.match(/^Picture\s*(\d+)$/i);
+    if (m) return `图片 ${m[1]}`;
+    m = raw.match(/^Video\s*(\d+)$/i);
+    if (m) return `视频 ${m[1]}`;
+    m = raw.match(/^Audio\s*(\d+)$/i);
+    if (m) return `音频 ${m[1]}`;
+    m = raw.match(/^图片资产\s*·\s*Picture\s*(\d+)$/i);
+    if (m) return `图片资产 · 图片 ${m[1]}`;
+    m = raw.match(/^视频资产\s*·\s*Video\s*(\d+)$/i);
+    if (m) return `视频资产 · 视频 ${m[1]}`;
+    m = raw.match(/^音频资产\s*·\s*Audio\s*(\d+)$/i);
+    if (m) return `音频资产 · 音频 ${m[1]}`;
+    return raw;
+  }
+
   if (EN.has(raw)) return EN.get(raw);
   let m = raw.match(/^参考：图片\s*(\d+)\s*·\s*视频\s*(\d+)\s*·\s*音频\s*(\d+)$/);
   if (m) return `References: Images ${m[1]} · Videos ${m[2]} · Audio ${m[3]}`;
-  m = raw.match(/^图片资产\s*·\s*Picture\s*(\d+)$/i);
+  m = raw.match(/^图片资产\s*·\s*(?:Picture|图片)\s*(\d+)$/i);
   if (m) return `Image asset · Picture ${m[1]}`;
-  m = raw.match(/^视频资产\s*·\s*Video\s*(\d+)$/i);
+  m = raw.match(/^视频资产\s*·\s*(?:Video|视频)\s*(\d+)$/i);
   if (m) return `Video asset · Video ${m[1]}`;
-  m = raw.match(/^音频资产\s*·\s*Audio\s*(\d+)$/i);
+  m = raw.match(/^音频资产\s*·\s*(?:Audio|音频)\s*(\d+)$/i);
   if (m) return `Audio asset · Audio ${m[1]}`;
   m = raw.match(/^Subject\s*(\d+)\s*·\s*切换来源资产$/i);
   if (m) return `Subject ${m[1]} · Change Source Asset`;
@@ -74,15 +108,15 @@ function translateString(text) {
 }
 
 function translateElement(el) {
-  if (!el || isZh()) return;
+  if (!el) return;
   if (el.nodeType === Node.TEXT_NODE) {
     const next = translateString(el.nodeValue);
     if (next !== el.nodeValue) el.nodeValue = next;
     return;
   }
   if (el.nodeType !== Node.ELEMENT_NODE) return;
-  if (el.matches?.(".terry-h3-dialogue-text") && el.dataset?.placeholder === "输入对白…") el.dataset.placeholder = "Enter dialogue…";
-  if (el.matches?.(".terry-h3-editor")) {
+  if (!isZh() && el.matches?.(".terry-h3-dialogue-text") && el.dataset?.placeholder === "输入对白…") el.dataset.placeholder = "Enter dialogue…";
+  if (!isZh() && el.matches?.(".terry-h3-editor")) {
     const p = el.dataset.placeholder;
     if (p?.includes("粘贴 MiniMax H3")) el.dataset.placeholder = "Paste a MiniMax H3 prompt; @ references assets; / inserts H3 syntax…";
   }
@@ -99,7 +133,8 @@ function translateElement(el) {
 }
 
 function localizeNode(node) {
-  if (!isTarget(node) || isZh()) return;
+  if (!isTarget(node)) return;
+  if (isZh()) return;
   node.title = "Terry | H3 Prompt Editor";
   for (const input of node.inputs || []) {
     if (String(input?.name || "") === "media") {
@@ -123,7 +158,6 @@ function localizeNode(node) {
 }
 
 function sweep() {
-  if (isZh()) return;
   for (const node of app.graph?._nodes || []) localizeNode(node);
   for (const selector of [
     ".terry-h3-role-menu", ".terry-h3-command-menu", ".terry-h3-rebind-menu",
