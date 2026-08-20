@@ -1,7 +1,7 @@
 from comfy_api.latest import ComfyExtension, io
 from typing_extensions import override
 
-from .nodes import EnhancedFileSave, VideoCompare, H3PromptEditor
+from .nodes import EnhancedFileSave, VideoCompare, H3PromptEditor, H3ShotTimeline
 
 WEB_DIRECTORY = "./web"
 
@@ -20,6 +20,7 @@ class TerryToolboxExtension(ComfyExtension):
             EnhancedFileSave,
             VideoCompare,
             H3PromptEditor,
+            H3ShotTimeline,
         ]
 
 
