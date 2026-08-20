@@ -473,8 +473,8 @@ function createEditor(node) {
   const cards = document.createElement("div"); cards.className = "terry-tl-cards";
 
   const audio = document.createElement("section"); audio.className = "terry-tl-audio";
-  const soundToggle = optionToggle(t("overall_soundscape", "overall_soundscape"), state.soundEnabled, (checked) => { state.soundEnabled = checked; renderAudio(); save(); });
-  const musicToggle = optionToggle(t("non_diegetic_music", "non_diegetic_music"), state.musicEnabled, (checked) => { state.musicEnabled = checked; renderAudio(); save(); });
+  const soundToggle = optionToggle(t("整体声音环境", "overall_soundscape"), state.soundEnabled, (checked) => { state.soundEnabled = checked; renderAudio(); save(); });
+  const musicToggle = optionToggle(t("非剧情内音乐", "non_diegetic_music"), state.musicEnabled, (checked) => { state.musicEnabled = checked; renderAudio(); save(); });
   const soundBox = document.createElement("textarea"); soundBox.rows = 2; soundBox.placeholder = t("环境声、动作声、呼吸等", "Ambience, action sounds, breathing, etc."); soundBox.value = state.soundscape;
   const musicBox = document.createElement("textarea"); musicBox.rows = 2; musicBox.placeholder = t("非剧情内音乐；无则可写 N/A", "Non-diegetic music; use N/A for none"); musicBox.value = state.music;
   soundBox.addEventListener("input", () => { state.soundscape = soundBox.value; save(); }); musicBox.addEventListener("input", () => { state.music = musicBox.value; save(); });
