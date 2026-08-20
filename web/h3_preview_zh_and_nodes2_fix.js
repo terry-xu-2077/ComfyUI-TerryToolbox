@@ -43,7 +43,7 @@ function readComfyLocale() {
     if (typeof value === "string" && value) return value;
   } catch {}
   const htmlLang = document?.documentElement?.lang;
-  if (htmlLang && htmlLang !== "en") return htmlLang;
+  if (typeof htmlLang === "string" && htmlLang.toLowerCase().startsWith("zh")) return htmlLang;
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i) || "";
@@ -53,7 +53,7 @@ function readComfyLocale() {
       if (match?.[1]) return match[1];
     }
   } catch {}
-  return navigator?.language || "en";
+  return "en";
 }
 
 function isChineseLocale() {
