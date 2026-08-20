@@ -56,6 +56,13 @@ function maxShot(node) {
   return Math.max(1, max);
 }
 
+function maxSpeaker(node) {
+  let max = 0;
+  const raw = String(promptWidget(node)?.value || "");
+  for (const m of raw.matchAll(/\(S(\d+)\)/gi)) max = Math.max(max, Number(m[1]) || 0);
+  return Math.max(1, max);
+}
+
 function setShotNumber(node, chip, number) {
   number = Math.max(1, Math.floor(Number(number) || 1));
   chip.dataset.raw = `[Shot ${number}]`;
@@ -67,15 +74,26 @@ function setShotNumber(node, chip, number) {
   closePicker(node);
 }
 
-function openShotPicker(node, chip) {
+function setSpeakerNumber(node, chip, number) {
+  number = Math.max(1, Math.floor(Number(number) || 1));
+  chip.dataset.raw = `(S${number})`;
+  const label = [...chip.children].reverse().find((el) => el.tagName === "SPAN") || chip;
+  label.textContent = `说话人 S${number}`;
+  chip.title = `说话人 S${number} · 点击切换序号`;
+  chip.closest(".terry-h3-editor")?.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: null }));
+  app.graph?.change?.();
+  closePicker(node);
+}
+
+function openNumberPicker(node, chip, type) {
   closePicker(node);
   const current = Number(String(chip.dataset.raw || "").match(/\d+/)?.[0] || 1);
-  const max = maxShot(node);
+  const max = type === "speaker" ? maxSpeaker(node) : maxShot(node);
   const menu = document.createElement("div");
   menu.className = "terry-h3-shot-picker";
   const head = document.createElement("div");
   head.className = "terry-h3-shot-picker-head";
-  head.textContent = "切换镜头序号";
+  head.textContent = type === "speaker" ? "切换说话人序号" : "切换镜头序号";
   menu.append(head);
 
   const grid = document.createElement("div");
@@ -84,10 +102,12 @@ function openShotPicker(node, chip) {
   for (let i = 1; i <= limit; i++) {
     const b = document.createElement("button");
     b.type = "button";
-    b.textContent = String(i);
+    b.textContent = type === "speaker" ? `S${i}` : String(i);
     if (i === current) b.classList.add("is-current");
     b.addEventListener("pointerdown", (e) => {
-      e.preventDefault(); e.stopPropagation(); setShotNumber(node, chip, i);
+      e.preventDefault(); e.stopPropagation();
+      if (type === "speaker") setSpeakerNumber(node, chip, i);
+      else setShotNumber(node, chip, i);
     });
     grid.append(b);
   }
@@ -99,7 +119,7 @@ function openShotPicker(node, chip) {
   input.type = "number"; input.min = "1"; input.step = "1"; input.value = String(current);
   const apply = document.createElement("button");
   apply.type = "button"; apply.textContent = "应用";
-  const commit = () => setShotNumber(node, chip, input.value);
+  const commit = () => type === "speaker" ? setSpeakerNumber(node, chip, input.value) : setShotNumber(node, chip, input.value);
   apply.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); commit(); });
   input.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); commit(); } });
   custom.append(input, apply); menu.append(custom);
@@ -116,6 +136,14 @@ function openShotPicker(node, chip) {
   menu.style.top = `${Math.max(8, top)}px`;
 }
 
+function openShotPicker(node, chip) {
+  openNumberPicker(node, chip, "shot");
+}
+
+function openSpeakerPicker(node, chip) {
+  openNumberPicker(node, chip, "speaker");
+}
+
 function bindEditor(node) {
   const editor = node?.__terryH3Editor;
   if (!editor) return false;
@@ -127,10 +155,13 @@ function bindEditor(node) {
     const chip = event.target?.closest?.(".terry-h3-chip");
     if (!chip || !editor.contains(chip)) return;
     classifyChip(chip);
-    if (!chip.classList.contains("terry-h3-type-shot")) return;
+    const isShot = chip.classList.contains("terry-h3-type-shot");
+    const isSpeaker = chip.classList.contains("terry-h3-type-speaker");
+    if (!isShot && !isSpeaker) return;
     event.preventDefault();
     event.stopPropagation();
-    openShotPicker(node, chip);
+    if (isSpeaker) openSpeakerPicker(node, chip);
+    else openShotPicker(node, chip);
   }, true);
 
   const observer = new MutationObserver(() => decorate(editor));
@@ -167,7 +198,8 @@ function installStyle() {
 .terry-h3-type-audio{background:rgba(255,174,70,.12)!important;color:rgb(255,224,183)!important;box-shadow:inset 0 0 0 1px rgba(255,174,70,.24)!important}
 .terry-h3-type-shot{background:rgba(255,215,75,.13)!important;color:rgb(255,236,166)!important;box-shadow:inset 0 0 0 1px rgba(255,215,75,.25)!important;cursor:pointer!important}
 .terry-h3-type-shot:hover{background:rgba(255,215,75,.2)!important}
-.terry-h3-type-speaker{background:rgba(255,120,160,.12)!important;color:rgb(255,203,219)!important;box-shadow:inset 0 0 0 1px rgba(255,120,160,.24)!important}
+.terry-h3-type-speaker{background:rgba(255,120,160,.12)!important;color:rgb(255,203,219)!important;box-shadow:inset 0 0 0 1px rgba(255,120,160,.24)!important;cursor:pointer!important}
+.terry-h3-type-speaker:hover{background:rgba(255,120,160,.19)!important}
 .terry-h3-type-dialogue{background:rgba(0,226,187,.13)!important;color:rgb(190,255,244)!important;box-shadow:inset 0 0 0 1px rgba(0,226,187,.22)!important}
 .terry-h3-type-retention{background:rgba(145,155,175,.12)!important;color:rgb(220,225,235)!important;box-shadow:inset 0 0 0 1px rgba(170,180,200,.2)!important}
 .terry-h3-type-time{background:rgba(110,190,255,.1)!important;color:rgb(196,229,255)!important;box-shadow:inset 0 0 0 1px rgba(110,190,255,.2)!important}
@@ -191,7 +223,7 @@ app.registerExtension({
     document.addEventListener("pointerdown", (event) => {
       for (const node of app.graph?._nodes || []) {
         const menu = node?.__terryH3ShotPicker;
-        if (!menu || menu.contains(event.target) || event.target?.closest?.(".terry-h3-type-shot")) continue;
+        if (!menu || menu.contains(event.target) || event.target?.closest?.(".terry-h3-type-shot,.terry-h3-type-speaker")) continue;
         closePicker(node);
       }
     }, true);
