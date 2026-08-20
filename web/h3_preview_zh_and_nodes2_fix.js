@@ -78,7 +78,6 @@ function visibleLabelFromRaw(raw) {
 
 function setPlainChipLabel(chip, label) {
   if (!chip || !label) return;
-  // Media/subject chips may contain a thumbnail/icon plus one trailing text span.
   const children = [...chip.children];
   if (children.length) {
     const textChild = [...children].reverse().find((el) =>
@@ -128,10 +127,11 @@ function constrainEditor(node) {
   if (!wrap || !editor) return false;
 
   // Nodes 2.0 can measure a multiline DOM widget from its scrollHeight and then
-  // continually grow the node. Make the widget a fixed viewport and scroll inside it.
-  wrap.style.setProperty("height", "360px", "important");
+  // continually grow the node. Keep a fixed viewport and scroll inside it.
+  // The editor viewport is intentionally ~40% taller than the previous 360px layout.
+  wrap.style.setProperty("height", "504px", "important");
   wrap.style.setProperty("min-height", "0px", "important");
-  wrap.style.setProperty("max-height", "520px", "important");
+  wrap.style.setProperty("max-height", "728px", "important");
   wrap.style.setProperty("overflow", "hidden", "important");
   wrap.style.setProperty("contain", "size layout paint", "important");
 
@@ -144,12 +144,12 @@ function constrainEditor(node) {
 
   if (dom && !dom.__terryNodes2HeightFixed) {
     dom.__terryNodes2HeightFixed = true;
-    dom.computeSize = (width) => [Math.max(300, Number(width) || Number(node.size?.[0]) || 520), 370];
-    dom.getMinHeight = () => 300;
-    dom.getMaxHeight = () => 520;
+    dom.computeSize = (width) => [Math.max(300, Number(width) || Number(node.size?.[0]) || 520), 514];
+    dom.getMinHeight = () => 420;
+    dom.getMaxHeight = () => 728;
     dom.options ||= {};
-    dom.options.getMinHeight = () => 300;
-    dom.options.getMaxHeight = () => 520;
+    dom.options.getMinHeight = () => 420;
+    dom.options.getMaxHeight = () => 728;
   }
   return true;
 }
@@ -202,9 +202,9 @@ function installStyle() {
   style.id = "terry-h3-zh-nodes2-fix";
   style.textContent = `
 .terry-h3-wrap{
-  height:360px!important;
+  height:504px!important;
   min-height:0!important;
-  max-height:520px!important;
+  max-height:728px!important;
   overflow:hidden!important;
   contain:size layout paint!important;
 }
