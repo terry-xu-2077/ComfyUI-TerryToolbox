@@ -44,7 +44,7 @@ function previewFromSource(source, kind) {
   const filename = filenameFromSource(source, kind);
   if (filename) {
     const w = (source.widgets || []).find((item) => {
-      const value = item?.value;
+      const value = w?.value;
       return String(typeof value === "object" ? (value?.filename || value?.name || "") : (value || "")) === filename;
     });
     const value = w?.value;
@@ -219,12 +219,12 @@ function installStyle() {
 .terry-h3-timeline-root .terry-tl-shot{padding:8px 9px 7px!important}
 .terry-h3-timeline-root .terry-tl-shot>b,
 .terry-h3-timeline-root .terry-tl-shot-duration{display:inline!important;font-size:11px!important;font-weight:700!important;line-height:1.2!important;color:inherit!important;opacity:1!important}
-.terry-h3-timeline-root .terry-tl-shot>b::after{content:" - ";font-weight:700}
-.terry-h3-timeline-root .terry-tl-shot-duration{margin:0!important}
+.terry-h3-timeline-root .terry-tl-shot-duration{margin-left:6px!important;padding:1px 6px!important;border:1px solid rgba(255,209,102,.62)!important;border-radius:999px!important;background:rgba(245,158,11,.12)!important}
 .terry-h3-timeline-root .terry-tl-shot-summary{display:block;margin-top:7px;padding:0 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9.5px;line-height:1.2;opacity:.72;text-align:center;color:#f7e6ca}
 .terry-h3-timeline-root .terry-tl-shot.is-selected{background:linear-gradient(180deg,rgba(245,158,11,.52),rgba(218,119,6,.34))!important;border:1px solid #ffd166!important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),0 0 12px rgba(245,158,11,.38)!important;color:#fff7e8!important;z-index:2}
 .terry-h3-timeline-root .terry-tl-shot.is-selected>b,
 .terry-h3-timeline-root .terry-tl-shot.is-selected .terry-tl-shot-duration{font-size:11px!important;font-weight:700!important;text-shadow:0 1px 2px rgba(0,0,0,.45)}
+.terry-h3-timeline-root .terry-tl-shot.is-selected .terry-tl-shot-duration{border-color:#ffe0a3!important;background:rgba(255,209,102,.18)!important}
 .terry-h3-timeline-root .terry-tl-shot.is-selected .terry-tl-shot-summary{opacity:.95;color:#fff3da}
 .terry-h3-timeline-root .terry-tl-section .terry-tl-chip>img{width:26px;height:26px;object-fit:cover;border-radius:3px;margin-right:3px}
 `;
