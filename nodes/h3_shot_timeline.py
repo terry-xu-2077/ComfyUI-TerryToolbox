@@ -15,7 +15,9 @@ class H3ShotTimeline(io.ComfyNode):
                 tooltip="可连接 IMAGE / VIDEO / AUDIO；前端使用一个多路参考入口管理这些连接。",
             ),
             prefix="asset",
-            min=1,
+            # References are optional. The frontend uses a virtual multi-input and
+            # only serializes transport inputs for references that are actually connected.
+            min=0,
         )
 
         return io.Schema(
