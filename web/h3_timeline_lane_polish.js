@@ -44,7 +44,7 @@ function previewFromSource(source, kind) {
   const filename = filenameFromSource(source, kind);
   if (filename) {
     const w = (source.widgets || []).find((item) => {
-      const value = w?.value;
+      const value = item?.value;
       return String(typeof value === "object" ? (value?.filename || value?.name || "") : (value || "")) === filename;
     });
     const value = w?.value;
@@ -181,6 +181,15 @@ function bind(node) {
     root.addEventListener("input", (event) => {
       if (event.target?.closest?.(".terry-tl-card .terry-tl-rich")) refreshSoon(node);
     });
+    // The core timeline rebuilds all shot blocks when a seam drag finishes.
+    // Re-apply the lane presentation after that rebuild so the duration pill
+    // and shot summary never briefly fall back to the base timeline markup.
+    root.addEventListener("pointerup", (event) => {
+      if (event.target?.closest?.(".terry-tl-seam")) refreshSoon(node);
+    }, true);
+    root.addEventListener("pointercancel", (event) => {
+      if (event.target?.closest?.(".terry-tl-seam")) refreshSoon(node);
+    }, true);
   }
   const editor = node.__terryH3ShotTimeline;
   if (editor && !editor.__terryLanePolishRefreshWrapped) {
