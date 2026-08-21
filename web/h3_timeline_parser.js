@@ -166,8 +166,12 @@ function parseH3(raw, fallbackTotal = 15) {
   if (!headers.length) throw new Error(t("没有识别到 Shot / 镜头标题。至少需要一个镜头。", "No Shot / 镜头 headings were found. At least one shot is required."));
 
   // If there was no explicit section splitter, everything before the first shot becomes Global.
+  // AI/freeform prompts still need a visible boundary between global setup and the shot list;
+  // preserve an existing [分镜脚本]/[Storyboard] separator, or synthesize the canonical marker.
   const leading = split.body.slice(0, headers[0].start).trim();
-  const global = [split.global, leading].filter(Boolean).join("\n\n");
+  const globalParts = [split.global, leading].filter(Boolean);
+  if (split.mode !== "official") globalParts.push(isZh() ? "[分镜脚本]" : "[Storyboard]");
+  const global = globalParts.join("\n\n");
 
   const shots = [];
   const starts = [];
