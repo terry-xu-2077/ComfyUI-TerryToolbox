@@ -3,8 +3,6 @@ import { app } from "../../scripts/app.js";
 // Stable workflow ids. Never localize these.
 const PACK_TYPE = "TerryWireBusPack";
 const UNPACK_TYPE = "TerryWireBusUnpack";
-const LEGACY_PACK_TYPE = "Terry | 线束汇总";
-const LEGACY_UNPACK_TYPE = "Terry | 线束还原";
 const BUS_TYPE = "TERRY_WIRE_BUS";
 const EMPTY_TYPE = "*";
 
@@ -490,13 +488,6 @@ app.registerExtension({
       else queueMicrotask(() => syncUnpack(this, true));
       return result;
     };
-  },
-
-  beforeConfigureGraph(graphData) {
-    for (const node of graphData?.nodes || []) {
-      if (node?.type === LEGACY_PACK_TYPE) node.type = PACK_TYPE;
-      if (node?.type === LEGACY_UNPACK_TYPE) node.type = UNPACK_TYPE;
-    }
   },
 
   async setup() {
