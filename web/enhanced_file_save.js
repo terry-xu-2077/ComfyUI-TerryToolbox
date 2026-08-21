@@ -50,24 +50,73 @@ function setWidgetHidden(node, name, hidden) {
   }
 }
 
+function getGraphLink(graph, linkId) {
+  if (!graph || linkId == null) return null;
+
+  // Legacy LiteGraph stores links in a plain object.
+  const legacy = graph.links?.[linkId];
+  if (legacy) return legacy;
+
+  // Nodes 2.0 stores links in a Map-like collection.
+  const modern = graph._links?.get?.(linkId);
+  if (modern) return modern;
+
+  // Some builds stringify ids in the legacy object.
+  return graph.links?.[String(linkId)] || null;
+}
+
+function getGraphNode(graph, nodeId) {
+  return graph?.getNodeById?.(nodeId) || null;
+}
+
+function isReroute(node) {
+  const type = String(
+    node?.type ||
+    node?.constructor?.type ||
+    node?.comfyClass ||
+    node?.constructor?.comfyClass ||
+    ""
+  ).toLowerCase();
+  return type === "reroute" || type.endsWith("reroute");
+}
+
+function normalizeType(type) {
+  let value = String(type || "").toUpperCase();
+  if (value === "TEXT") value = "STRING";
+  return value;
+}
+
+function resolveOriginType(graph, linkId, seen = new Set()) {
+  if (linkId == null || seen.has(linkId)) return null;
+  seen.add(linkId);
+
+  const link = getGraphLink(graph, linkId);
+  if (!link) return null;
+
+  const origin = getGraphNode(graph, link.origin_id);
+  const output = origin?.outputs?.[link.origin_slot];
+
+  let type = normalizeType(link.type || output?.type);
+  if (type && type !== "*" && TYPE_WIDGETS[type]) return type;
+
+  // A reroute often reports wildcard type itself; continue walking upstream.
+  if (origin && isReroute(origin)) {
+    const upstreamLink = origin.inputs?.[0]?.link;
+    const upstreamType = resolveOriginType(graph, upstreamLink, seen);
+    if (upstreamType) return upstreamType;
+  }
+
+  // Final fallback: use the source output type even when link.type is wildcard.
+  type = normalizeType(output?.type);
+  return TYPE_WIDGETS[type] ? type : null;
+}
+
 function getConnectedType(node) {
   const input = node.inputs?.find((i) => i.name === "data");
   if (!input || input.link == null) return null;
 
-  const link = app.graph?.links?.[input.link];
-  if (!link) return null;
-
-  let type = String(link.type || "").toUpperCase();
-
-  if (!type || type === "*") {
-    const origin = app.graph?.getNodeById?.(link.origin_id);
-    const output = origin?.outputs?.[link.origin_slot];
-    type = String(output?.type || "").toUpperCase();
-  }
-
-  if (type === "TEXT") type = "STRING";
-
-  return TYPE_WIDGETS[type] ? type : null;
+  const graph = node.graph || app.graph;
+  return resolveOriginType(graph, input.link);
 }
 
 function resizeToContent(node) {
@@ -149,6 +198,12 @@ function hookWidget(node, name) {
   };
 }
 
+function schedulePanelRefresh(node) {
+  queueMicrotask(() => applyDynamicPanel(node));
+  requestAnimationFrame(() => applyDynamicPanel(node));
+  setTimeout(() => applyDynamicPanel(node), 50);
+}
+
 function initNode(node) {
   if (!node) return;
 
@@ -168,7 +223,7 @@ function initNode(node) {
   }
 
   applyDynamicPanel(node);
-  requestAnimationFrame(() => applyDynamicPanel(node));
+  schedulePanelRefresh(node);
 }
 
 app.registerExtension({
@@ -187,8 +242,7 @@ app.registerExtension({
     const originalConnections = nodeType.prototype.onConnectionsChange;
     nodeType.prototype.onConnectionsChange = function() {
       const result = originalConnections?.apply(this, arguments);
-      queueMicrotask(() => applyDynamicPanel(this));
-      requestAnimationFrame(() => applyDynamicPanel(this));
+      schedulePanelRefresh(this);
       return result;
     };
 
