@@ -10,6 +10,12 @@ const TYPE_WIDGETS = {
 };
 
 const ALL_TYPE_WIDGETS = Object.values(TYPE_WIDGETS).flat();
+const TIMESTAMP_WIDGETS = [
+  ["ts_year", "年份"],
+  ["ts_date", "日期"],
+  ["ts_hour", "时"],
+  ["ts_minute_second", "分秒"],
+];
 
 function getWidget(node, name) {
   return node.widgets?.find((w) => w.name === name);
@@ -53,15 +59,12 @@ function setWidgetHidden(node, name, hidden) {
 function getGraphLink(graph, linkId) {
   if (!graph || linkId == null) return null;
 
-  // Legacy LiteGraph stores links in a plain object.
   const legacy = graph.links?.[linkId];
   if (legacy) return legacy;
 
-  // Nodes 2.0 stores links in a Map-like collection.
   const modern = graph._links?.get?.(linkId);
   if (modern) return modern;
 
-  // Some builds stringify ids in the legacy object.
   return graph.links?.[String(linkId)] || null;
 }
 
@@ -99,14 +102,12 @@ function resolveOriginType(graph, linkId, seen = new Set()) {
   let type = normalizeType(link.type || output?.type);
   if (type && type !== "*" && TYPE_WIDGETS[type]) return type;
 
-  // A reroute often reports wildcard type itself; continue walking upstream.
   if (origin && isReroute(origin)) {
     const upstreamLink = origin.inputs?.[0]?.link;
     const upstreamType = resolveOriginType(graph, upstreamLink, seen);
     if (upstreamType) return upstreamType;
   }
 
-  // Final fallback: use the source output type even when link.type is wildcard.
   type = normalizeType(output?.type);
   return TYPE_WIDGETS[type] ? type : null;
 }
@@ -132,13 +133,94 @@ function resizeToContent(node) {
   app.graph?.setDirtyCanvas?.(true, true);
 }
 
+function syncTimestampRow(node) {
+  const row = node.__terryTimestampRow;
+  if (!row) return;
+
+  const enabled = getWidget(node, "use_timestamp")?.value === true;
+  row.element.style.display = enabled ? "flex" : "none";
+  row.widget.hidden = !enabled;
+
+  for (const [name] of TIMESTAMP_WIDGETS) {
+    const checkbox = row.inputs[name];
+    const widget = getWidget(node, name);
+    if (checkbox && widget) checkbox.checked = widget.value === true;
+  }
+}
+
+function createTimestampRow(node) {
+  if (node.__terryTimestampRow || typeof node.addDOMWidget !== "function") return;
+
+  const element = document.createElement("div");
+  element.style.display = "flex";
+  element.style.alignItems = "center";
+  element.style.gap = "14px";
+  element.style.padding = "2px 10px 2px 8px";
+  element.style.height = "30px";
+  element.style.boxSizing = "border-box";
+  element.style.fontSize = "13px";
+  element.style.color = "var(--fg-color, #ddd)";
+  element.style.whiteSpace = "nowrap";
+  element.style.userSelect = "none";
+
+  const title = document.createElement("span");
+  title.textContent = "时间戳：";
+  title.style.opacity = "0.8";
+  element.appendChild(title);
+
+  const inputs = {};
+
+  for (const [name, labelText] of TIMESTAMP_WIDGETS) {
+    const label = document.createElement("label");
+    label.style.display = "inline-flex";
+    label.style.alignItems = "center";
+    label.style.gap = "5px";
+    label.style.cursor = "pointer";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.style.margin = "0";
+    checkbox.style.width = "14px";
+    checkbox.style.height = "14px";
+    checkbox.checked = getWidget(node, name)?.value === true;
+
+    checkbox.addEventListener("change", () => {
+      const widget = getWidget(node, name);
+      if (!widget) return;
+      widget.value = checkbox.checked;
+      widget.callback?.(widget.value);
+      node.setDirtyCanvas?.(true, true);
+      app.graph?.setDirtyCanvas?.(true, true);
+    });
+
+    const text = document.createElement("span");
+    text.textContent = labelText;
+
+    label.appendChild(checkbox);
+    label.appendChild(text);
+    element.appendChild(label);
+    inputs[name] = checkbox;
+  }
+
+  const widget = node.addDOMWidget("terry_timestamp_parts", "div", element, {
+    serialize: false,
+    hideOnZoom: false,
+  });
+
+  widget.computeSize = function(width) {
+    if (this.hidden) return [0, -4];
+    return [width ?? 0, 34];
+  };
+
+  node.__terryTimestampRow = { element, widget, inputs };
+  syncTimestampRow(node);
+}
+
 function applyDynamicPanel(node) {
-  // Default: no media-specific options.
   for (const name of ALL_TYPE_WIDGETS) {
     setWidgetHidden(node, name, true);
   }
 
-  // Show only the options that belong to the connected input type.
   const type = getConnectedType(node);
   if (type) {
     for (const name of TYPE_WIDGETS[type]) {
@@ -146,24 +228,23 @@ function applyDynamicPanel(node) {
     }
   }
 
-  // Timestamp dependency.
-  const useTimestamp = getWidget(node, "use_timestamp")?.value === true;
-  for (const name of ["ts_year", "ts_date", "ts_hour", "ts_minute_second"]) {
-    setWidgetHidden(node, name, !useTimestamp);
+  // The four backend boolean widgets remain serialized, but are represented
+  // by one compact horizontal checkbox row in the UI.
+  for (const [name] of TIMESTAMP_WIDGETS) {
+    setWidgetHidden(node, name, true);
   }
+  createTimestampRow(node);
+  syncTimestampRow(node);
 
-  // Sequence dependency.
   const useSequence = getWidget(node, "append_sequence")?.value === true;
   setWidgetHidden(node, "sequence_start", !useSequence);
   setWidgetHidden(node, "sequence_padding", !useSequence);
 
-  // Audio dependency.
   if (type === "AUDIO") {
     const format = getWidget(node, "audio_format")?.value;
     setWidgetHidden(node, "audio_quality", format === "flac");
   }
 
-  // Video dependency.
   if (type === "VIDEO") {
     const codec = getWidget(node, "video_codec")?.value;
     const encoding = getWidget(node, "video_encoding")?.value;
@@ -176,7 +257,6 @@ function applyDynamicPanel(node) {
     );
   }
 
-  // Text dependency.
   if (type === "STRING") {
     const extension = getWidget(node, "text_extension")?.value;
     setWidgetHidden(node, "text_custom_extension", extension !== "custom");
@@ -222,6 +302,7 @@ function initNode(node) {
     hookWidget(node, name);
   }
 
+  createTimestampRow(node);
   applyDynamicPanel(node);
   schedulePanelRefresh(node);
 }
