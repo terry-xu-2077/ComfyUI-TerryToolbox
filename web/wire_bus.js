@@ -25,8 +25,8 @@ function isChineseLocale() {
 function labels() {
   if (isChineseLocale()) {
     return {
-      packTitle: "Terry | 线束汇总",
-      unpackTitle: "Terry | 线束还原",
+      packTitle: "Terry 线束汇总",
+      unpackTitle: "Terry 线束还原",
       packDescription: "将任意数量、任意类型的连接汇总为一根虚拟总线，支持 KJNodes Get/Set。",
       unpackDescription: "从虚拟总线自动恢复原始连接的数量、类型和顺序，支持 KJNodes Get/Set。",
       category: "Terry Toolbox/线束整理",
@@ -37,8 +37,8 @@ function labels() {
     };
   }
   return {
-    packTitle: "Terry | Wire Bus Pack",
-    unpackTitle: "Terry | Wire Bus Unpack",
+    packTitle: "Terry Wire Bus Pack",
+    unpackTitle: "Terry Wire Bus Unpack",
     packDescription: "Bundle any number of connections into one virtual bus. Supports KJNodes Get/Set.",
     unpackDescription: "Restore the original connection count, types and order from a virtual bus. Supports KJNodes Get/Set.",
     category: "Terry Toolbox/Wire Management",
