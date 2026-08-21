@@ -8,21 +8,58 @@ const LEGACY_UNPACK_TYPE = "Terry | 线束还原";
 const BUS_TYPE = "TERRY_WIRE_BUS";
 const EMPTY_TYPE = "*";
 
+function localeCode() {
+  try {
+    const value = app?.ui?.settings?.getSettingValue?.("Comfy.Locale");
+    return String(value || navigator.language || "en").trim().toLowerCase().replaceAll("_", "-");
+  } catch {
+    return String(navigator.language || "en").trim().toLowerCase().replaceAll("_", "-");
+  }
+}
+
+function isChineseLocale() {
+  const locale = localeCode();
+  return locale === "zh" || locale.startsWith("zh-");
+}
+
+function labels() {
+  if (isChineseLocale()) {
+    return {
+      packTitle: "Terry | 线束汇总",
+      unpackTitle: "Terry | 线束还原",
+      packDescription: "将任意数量、任意类型的连接汇总为一根虚拟总线，支持 KJNodes Get/Set。",
+      unpackDescription: "从虚拟总线自动恢复原始连接的数量、类型和顺序，支持 KJNodes Get/Set。",
+      category: "Terry Toolbox/线束整理",
+      addWire: "添加线束",
+      bus: "总线",
+      input: "输入",
+      output: "输出",
+    };
+  }
+  return {
+    packTitle: "Terry | Wire Bus Pack",
+    unpackTitle: "Terry | Wire Bus Unpack",
+    packDescription: "Bundle any number of connections into one virtual bus. Supports KJNodes Get/Set.",
+    unpackDescription: "Restore the original connection count, types and order from a virtual bus. Supports KJNodes Get/Set.",
+    category: "Terry Toolbox/Wire Management",
+    addWire: "Add wire",
+    bus: "bus",
+    input: "Input",
+    output: "Output",
+  };
+}
+
 function nodeType(node) {
   return String(
-    node?.comfyClass ||
-    node?.type ||
-    node?.constructor?.comfyClass ||
-    node?.constructor?.type ||
-    ""
+    node?.comfyClass || node?.type || node?.constructor?.comfyClass || node?.constructor?.type || ""
   );
 }
 
 function isPack(node) { return nodeType(node) === PACK_TYPE; }
 function isUnpack(node) { return nodeType(node) === UNPACK_TYPE; }
 function isReroute(node) {
-  const t = nodeType(node).toLowerCase();
-  return t === "reroute" || t.endsWith("reroute");
+  const type = nodeType(node).toLowerCase();
+  return type === "reroute" || type.endsWith("reroute");
 }
 function isGet(node) { return nodeType(node) === "GetNode"; }
 function isSet(node) { return nodeType(node) === "SetNode"; }
@@ -120,12 +157,8 @@ function resolveUpstream(graph, linkId, seen = new Set()) {
   const node = getNode(graph, nodeId);
   if (!node) return null;
 
-  if (isReroute(node)) {
-    return resolveUpstream(graph, node.inputs?.[0]?.link, seen);
-  }
+  if (isReroute(node)) return resolveUpstream(graph, node.inputs?.[0]?.link, seen);
 
-  // KJNodes GetNode is transparent for the bus: resolve the matching SetNode,
-  // then continue from the value plugged into that setter.
   if (isGet(node)) {
     const setter = findSetter(node);
     const setterLink = setter?.node?.inputs?.[0]?.link;
@@ -166,26 +199,24 @@ function collectDownstreamTargets(graph, node, outputSlot, seenNodes = new Set()
 }
 
 function findPackFromUnpack(unpack) {
-  const graph = unpack?.graph;
   const linkId = unpack?.inputs?.[0]?.link;
-  if (!graph || linkId == null) return null;
-  const upstream = resolveUpstream(graph, linkId);
+  if (!unpack?.graph || linkId == null) return null;
+  const upstream = resolveUpstream(unpack.graph, linkId);
   return upstream && isPack(upstream.node) ? upstream.node : null;
 }
 
 function connectedPackEntries(pack) {
-  const graph = pack?.graph;
-  if (!graph) return [];
+  if (!pack?.graph) return [];
   const entries = [];
   for (let i = 0; i < (pack.inputs?.length || 0); i++) {
     const input = pack.inputs[i];
     if (!input || input.link == null) continue;
-    const source = resolveUpstream(graph, input.link);
+    const source = resolveUpstream(pack.graph, input.link);
     if (!source) continue;
     entries.push({
       source,
       type: source.type || input.type || EMPTY_TYPE,
-      name: source.name || input.label || input.name || `Input ${entries.length + 1}`,
+      name: source.name || input.label || input.name || `${labels().input} ${entries.length + 1}`,
     });
   }
   return entries;
@@ -201,10 +232,32 @@ function disconnectAllOutputLinks(node, outputIndex) {
 }
 
 function signatureForEntries(entries) {
-  return entries.map((e) => `${e.source?.nodeId}:${e.source?.slot}:${e.type}:${e.name}`).join("|");
+  return entries.map((entry) => `${entry.source?.nodeId}:${entry.source?.slot}:${entry.type}:${entry.name}`).join("|");
+}
+
+function localizeFixedPorts(node) {
+  const text = labels();
+  if (isPack(node)) {
+    const out = node.outputs?.[0];
+    if (out) {
+      out.name = "bus";
+      out.label = text.bus;
+      out.type = BUS_TYPE;
+    }
+    node.title = text.packTitle;
+  } else if (isUnpack(node)) {
+    const input = node.inputs?.[0];
+    if (input) {
+      input.name = "bus";
+      input.label = text.bus;
+      input.type = BUS_TYPE;
+    }
+    node.title = text.unpackTitle;
+  }
 }
 
 function syncUnpack(unpack, force = false) {
+  localizeFixedPorts(unpack);
   const pack = findPackFromUnpack(unpack);
   const entries = pack ? connectedPackEntries(pack) : [];
   const signature = signatureForEntries(entries);
@@ -220,7 +273,9 @@ function syncUnpack(unpack, force = false) {
     unpack.removeOutput?.(i);
   }
 
-  entries.forEach((entry, i) => unpack.addOutput(entry.name || `Output ${i + 1}`, entry.type || EMPTY_TYPE));
+  entries.forEach((entry, i) =>
+    unpack.addOutput(entry.name || `${labels().output} ${i + 1}`, entry.type || EMPTY_TYPE)
+  );
 
   for (let i = 0; i < Math.min(outgoing.length, unpack.outputs?.length || 0); i++) {
     for (const target of outgoing[i]) {
@@ -244,6 +299,8 @@ function syncAllUnpacks() {
 
 function refreshPackSlots(pack) {
   if (!pack?.graph || app.configuringGraph) return;
+  const text = labels();
+  localizeFixedPorts(pack);
 
   for (let i = 0; i < (pack.inputs?.length || 0); i++) {
     const input = pack.inputs[i];
@@ -251,20 +308,20 @@ function refreshPackSlots(pack) {
     const source = resolveUpstream(pack.graph, input.link);
     if (!source) continue;
     input.type = source.type || EMPTY_TYPE;
-    input.name = source.name || `Input ${i + 1}`;
+    input.name = source.name || `${text.input} ${i + 1}`;
     input.label = input.name;
   }
 
-  // Keep exactly one unconnected wildcard input at the bottom.
   for (let i = (pack.inputs?.length || 0) - 2; i >= 0; i--) {
     if (pack.inputs[i]?.link == null) pack.removeInput?.(i);
   }
   const last = pack.inputs?.[pack.inputs.length - 1];
   if (!last || last.link != null || last.type !== EMPTY_TYPE) {
-    pack.addInput("Add wire", EMPTY_TYPE);
+    const input = pack.addInput("wire", EMPTY_TYPE);
+    if (input) input.label = text.addWire;
   } else {
-    last.name = "Add wire";
-    last.label = "Add wire";
+    last.name = "wire";
+    last.label = text.addWire;
     last.type = EMPTY_TYPE;
   }
 
@@ -319,15 +376,26 @@ function patchGraphToPrompt() {
 let bridgeTimer = null;
 function startBridge() {
   if (bridgeTimer) return;
-  bridgeTimer = setInterval(syncAllUnpacks, 300);
+  bridgeTimer = setInterval(() => {
+    for (const graph of allGraphs()) {
+      for (const node of graph?._nodes || []) {
+        if (isPack(node)) {
+          localizeFixedPorts(node);
+          const last = node.inputs?.[node.inputs.length - 1];
+          if (last?.link == null && last?.type === EMPTY_TYPE) last.label = labels().addWire;
+        }
+        if (isUnpack(node)) syncUnpack(node);
+      }
+    }
+  }, 300);
 }
 
-function makeNodeDef(name, displayName, description, input, output, outputName) {
+function makeNodeDef(name, displayName, description, category, input, output, outputName) {
   return {
     name,
     display_name: displayName,
     description,
-    category: "Terry Toolbox/Wire Management",
+    category,
     python_module: "custom_nodes.ComfyUI-TerryToolbox",
     input,
     output,
@@ -340,72 +408,52 @@ function makeNodeDef(name, displayName, description, input, output, outputName) 
 app.registerExtension({
   name: "Terry.WireBus",
 
-  // Official frontend-node registration path: define full ComfyNodeDef metadata
-  // before ComfyUI registers node classes. This makes the Vue/Nodes 2.0 library,
-  // search and i18n systems treat these as normal node definitions instead of
-  // __frontend_only__ fallback entries.
   addCustomNodeDefs(defs) {
+    const text = labels();
     defs[PACK_TYPE] = makeNodeDef(
       PACK_TYPE,
-      "Terry | Wire Bus Pack",
-      "Bundle any number of connections into one virtual bus. Supports KJNodes Get/Set.",
-      { required: { wire: [EMPTY_TYPE, {}] } },
+      text.packTitle,
+      text.packDescription,
+      text.category,
+      { required: { wire: [EMPTY_TYPE, { label: text.addWire }] } },
       [BUS_TYPE],
-      ["bus"]
+      [text.bus]
     );
-
     defs[UNPACK_TYPE] = makeNodeDef(
       UNPACK_TYPE,
-      "Terry | Wire Bus Unpack",
-      "Restore the original connection count, types and order from a virtual bus. Supports KJNodes Get/Set.",
-      { required: { bus: [BUS_TYPE, {}] } },
+      text.unpackTitle,
+      text.unpackDescription,
+      text.category,
+      { required: { bus: [BUS_TYPE, { label: text.bus }] } },
       [],
       []
     );
   },
 
-  // Extend the LGraphNode class generated by ComfyUI from the definitions above.
-  // No manual LiteGraph.registerNodeType() call is needed.
   beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData.name !== PACK_TYPE && nodeData.name !== UNPACK_TYPE) return;
-
     const isPackDef = nodeData.name === PACK_TYPE;
+
     const originalCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
       const result = originalCreated?.apply(this, arguments);
       this.isVirtualNode = true;
       this.serialize_widgets = false;
-
+      localizeFixedPorts(this);
       if (isPackDef) {
         const first = this.inputs?.[0];
         if (first) {
-          first.name = "Add wire";
-          first.label = "Add wire";
+          first.name = "wire";
+          first.label = labels().addWire;
           first.type = EMPTY_TYPE;
         }
-        const out = this.outputs?.[0];
-        if (out) {
-          out.name = "bus";
-          out.label = "bus";
-          out.type = BUS_TYPE;
-        }
-        this.setSize?.([Math.max(210, this.size?.[0] || 210), Math.max(90, this.size?.[1] || 90)]);
         queueMicrotask(() => refreshPackSlots(this));
       } else {
-        const input = this.inputs?.[0];
-        if (input) {
-          input.name = "bus";
-          input.label = "bus";
-          input.type = BUS_TYPE;
-        }
-        this.setSize?.([Math.max(210, this.size?.[0] || 210), Math.max(80, this.size?.[1] || 80)]);
         queueMicrotask(() => syncUnpack(this, true));
       }
       return result;
     };
 
-    // Virtual-node hook used by ComfyUI prompt preparation. Actual link expansion
-    // is performed by patchGraphToPrompt(), so this node itself emits no backend op.
     nodeType.prototype.applyToGraph = function () {};
 
     const originalConnections = nodeType.prototype.onConnectionsChange;
@@ -437,14 +485,13 @@ app.registerExtension({
     const originalConfigure = nodeType.prototype.onConfigure;
     nodeType.prototype.onConfigure = function () {
       const result = originalConfigure?.apply(this, arguments);
+      localizeFixedPorts(this);
       if (isPackDef) queueMicrotask(() => refreshPackSlots(this));
       else queueMicrotask(() => syncUnpack(this, true));
       return result;
     };
   },
 
-  // Migrate the short-lived Chinese type ids used by an earlier build back to
-  // the stable English ids so those test workflows keep loading.
   beforeConfigureGraph(graphData) {
     for (const node of graphData?.nodes || []) {
       if (node?.type === LEGACY_PACK_TYPE) node.type = PACK_TYPE;
