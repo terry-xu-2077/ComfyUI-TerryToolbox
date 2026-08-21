@@ -4,27 +4,12 @@ const PACK_TYPE = "TerryWireBusPack";
 const BUS_TYPE = "TERRY_WIRE_BUS";
 const MEDIA_TYPES = new Set(["IMAGE", "VIDEO", "AUDIO"]);
 const MAX_MEDIA = 32;
+const VISUAL_STATE_PROP = "terry_h3_wire_bus_visual_state";
 
 const TARGETS = {
   TerryH3PromptEditor: "terry_h3_virtual_media_links",
   TerryH3ShotTimeline: "terry_h3_timeline_virtual_media_links",
 };
-
-function patchBusWildcardCompatibility() {
-  const lite = globalThis.LiteGraph;
-  if (!lite || lite.__terryH3BusWildcardPatched || typeof lite.isValidConnection !== "function") return;
-  lite.__terryH3BusWildcardPatched = true;
-  const original = lite.isValidConnection.bind(lite);
-  lite.isValidConnection = function(typeA, typeB) {
-    const a = String(typeA ?? "").toUpperCase();
-    const b = String(typeB ?? "").toUpperCase();
-    if ((a === BUS_TYPE && (b === "*" || b.split(",").map((x) => x.trim()).includes("*"))) ||
-        (b === BUS_TYPE && (a === "*" || a.split(",").map((x) => x.trim()).includes("*")))) {
-      return true;
-    }
-    return original(typeA, typeB);
-  };
-}
 
 function nodeType(node) {
   return String(
@@ -227,16 +212,54 @@ function expandBusLink(graph, link) {
   return [];
 }
 
+function cloneVirtualLink(link) {
+  return {
+    source_id: Number(link?.source_id),
+    source_slot: Number(link?.source_slot) || 0,
+    source_type: String(link?.source_type || "*").toUpperCase(),
+    kind: link?.kind || kindFor(link?.source_type),
+  };
+}
+
+function getVisualState(node) {
+  const state = node?.properties?.[VISUAL_STATE_PROP];
+  if (!state || !Array.isArray(state.buses)) return null;
+  return state;
+}
+
+function setVisualState(node, buses, direct) {
+  node.properties ||= {};
+  node.properties[VISUAL_STATE_PROP] = {
+    buses: buses.map(cloneVirtualLink),
+    direct: direct.map(cloneVirtualLink),
+  };
+}
+
 function normalizeExpandedLinks(node, prop) {
   node.properties ||= {};
-  const original = Array.isArray(node.properties[prop]) ? node.properties[prop] : [];
-  if (!original.length) return false;
-
+  const current = Array.isArray(node.properties[prop]) ? node.properties[prop] : [];
   const graph = node.graph || app.graph;
+  let state = getVisualState(node);
+
+  // First BUS connection: remember the compact visual source before expanding it.
+  const incomingBuses = current.filter((link) => isBusVirtualLink(graph, link));
+  if (incomingBuses.length) {
+    const direct = current.filter((link) => !isBusVirtualLink(graph, link));
+    setVisualState(node, incomingBuses, direct);
+    state = getVisualState(node);
+  }
+
+  if (!state?.buses?.length) return false;
+
+  // "Remove all reference inputs" clears the normal H3 link list. Treat that as
+  // an explicit request to remove the remembered BUS as well.
+  if (!current.length && state.direct?.length) {
+    delete node.properties[VISUAL_STATE_PROP];
+    return false;
+  }
+
   const next = [];
   const seen = new Set();
-  let foundBus = false;
-
   const push = (link) => {
     const id = Number(link?.source_id);
     const slot = Number(link?.source_slot) || 0;
@@ -244,25 +267,15 @@ function normalizeExpandedLinks(node, prop) {
     const key = `${id}:${slot}`;
     if (seen.has(key) || next.length >= MAX_MEDIA) return;
     seen.add(key);
-    next.push({
-      source_id: id,
-      source_slot: slot,
-      source_type: String(link?.source_type || "*").toUpperCase(),
-      kind: link?.kind || kindFor(link?.source_type),
-    });
+    next.push(cloneVirtualLink(link));
   };
 
-  for (const link of original) {
-    if (!isBusVirtualLink(graph, link)) {
-      push(link);
-      continue;
-    }
-    foundBus = true;
-    for (const media of expandBusLink(graph, link)) push(media);
+  for (const link of state.direct || []) push(link);
+  for (const bus of state.buses) {
+    for (const media of expandBusLink(graph, bus)) push(media);
   }
 
-  if (!foundBus) return false;
-  const before = JSON.stringify(original);
+  const before = JSON.stringify(current);
   const after = JSON.stringify(next);
   if (before === after) return false;
 
@@ -275,8 +288,78 @@ function normalizeExpandedLinks(node, prop) {
   return true;
 }
 
+function connectionPos(node, input, slotIndex) {
+  const modern = input ? node?.getInputPos?.(slotIndex) : node?.getOutputPos?.(slotIndex);
+  if (Array.isArray(modern) && Number.isFinite(modern[0])) return modern;
+  return input
+    ? [Number(node?.pos?.[0] || 0), Number(node?.pos?.[1] || 0) + 40 + slotIndex * 20]
+    : [Number(node?.pos?.[0] || 0) + Number(node?.size?.[0] || 200), Number(node?.pos?.[1] || 0) + 40 + slotIndex * 20];
+}
+
+function mediaInputIndex(node) {
+  return node?.inputs?.findIndex?.((slot) => String(slot?.name || "") === "media") ?? -1;
+}
+
+function drawBusOverlay(canvas, ctx, graph, node, buses) {
+  if (!ctx || !buses?.length) return;
+  const inputIndex = mediaInputIndex(node);
+  if (inputIndex < 0) return;
+  const end = connectionPos(node, true, inputIndex);
+
+  for (const bus of buses) {
+    const source = getNode(graph, Number(bus.source_id));
+    if (!source) continue;
+    const start = connectionPos(source, false, Number(bus.source_slot) || 0);
+    const colors = globalThis.LGraphCanvas?.link_type_colors || {};
+    const color = colors[BUS_TYPE] || colors[BUS_TYPE.toLowerCase()] || globalThis.LiteGraph?.LINK_COLOR || "#9A9";
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(start[0], start[1]);
+    ctx.bezierCurveTo(start[0] + 80, start[1], end[0] - 80, end[1], end[0], end[1]);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(6, (canvas?.connections_width || 3) * 2);
+    ctx.globalAlpha *= 0.72;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function patchCanvas() {
+  const canvas = app.canvas;
+  if (!canvas || canvas.__terryH3BusVisualPatched || typeof canvas.drawConnections !== "function") return;
+  canvas.__terryH3BusVisualPatched = true;
+  const original = canvas.drawConnections;
+
+  canvas.drawConnections = function(ctx) {
+    const graph = this.graph || app.graph;
+    const swaps = [];
+
+    // H3's own virtual-link renderer reads its normal media link property. During
+    // drawing only, temporarily swap that list back to direct links + one BUS link.
+    for (const node of graph?._nodes || []) {
+      const prop = TARGETS[nodeType(node)];
+      if (!prop) continue;
+      const state = getVisualState(node);
+      if (!state?.buses?.length) continue;
+      swaps.push({ node, prop, value: node.properties?.[prop], state });
+      node.properties[prop] = [...(state.direct || []), ...state.buses].map(cloneVirtualLink);
+    }
+
+    let result;
+    try {
+      result = original.apply(this, arguments);
+    } finally {
+      for (const item of swaps) item.node.properties[item.prop] = item.value;
+    }
+
+    const drawCtx = ctx || this.bgctx || this.ctx;
+    for (const item of swaps) drawBusOverlay(this, drawCtx, graph, item.node, item.state.buses);
+    return result;
+  };
+}
+
 function refreshAll() {
-  patchBusWildcardCompatibility();
+  patchCanvas();
   for (const graph of allGraphs()) {
     for (const node of graph?._nodes || []) {
       const prop = TARGETS[nodeType(node)];
@@ -287,7 +370,7 @@ function refreshAll() {
 
 let timer = null;
 function start() {
-  patchBusWildcardCompatibility();
+  patchCanvas();
   if (timer) return;
   timer = setInterval(refreshAll, 200);
 }
