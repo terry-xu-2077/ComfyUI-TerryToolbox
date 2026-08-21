@@ -42,8 +42,7 @@ function resolveUpstream(graph, linkId, seen = new Set()) {
       name: node.outputs?.[link.origin_slot]?.name || node.outputs?.[link.origin_slot]?.label || null,
     };
   }
-  const inputLink = node.inputs?.[0]?.link;
-  return resolveUpstream(graph, inputLink, seen);
+  return resolveUpstream(graph, node.inputs?.[0]?.link, seen);
 }
 
 function collectDownstreamTargets(graph, node, outputSlot, seenNodes = new Set()) {
@@ -107,8 +106,10 @@ function syncUnpack(unpack) {
   const pack = findPackFromUnpack(unpack);
   const entries = pack ? connectedPackEntries(pack) : [];
 
-  // Preserve existing downstream links by logical index while slot metadata is rebuilt.
-  const outgoing = (unpack.outputs || []).map((_, index) => collectDownstreamTargets(unpack.graph, unpack, index));
+  const outgoing = (unpack.outputs || []).map((_, index) =>
+    collectDownstreamTargets(unpack.graph, unpack, index)
+  );
+
   for (let i = (unpack.outputs?.length || 0) - 1; i >= 0; i--) {
     disconnectAllOutputLinks(unpack, i);
     unpack.removeOutput?.(i);
@@ -148,7 +149,6 @@ function syncUnpacksFromPack(pack) {
 function refreshPackSlots(pack) {
   if (!pack?.graph || app.configuringGraph) return;
 
-  // Update connected input slots from the actual upstream connection.
   for (let i = 0; i < (pack.inputs?.length || 0); i++) {
     const input = pack.inputs[i];
     if (!input || input.link == null) continue;
@@ -159,7 +159,7 @@ function refreshPackSlots(pack) {
     input.label = input.name;
   }
 
-  // Keep exactly one empty wildcard input at the bottom.
+  // Always leave one wildcard socket at the bottom, so the node grows naturally.
   for (let i = (pack.inputs?.length || 0) - 2; i >= 0; i--) {
     if (pack.inputs[i]?.link == null) pack.removeInput?.(i);
   }
@@ -239,6 +239,10 @@ app.registerExtension({
         this.size = [210, 90];
       }
 
+      // ComfyUI invokes this hook for virtual nodes while preparing a prompt.
+      // Expansion is handled centrally after graphToPrompt, so this is intentionally empty.
+      applyToGraph() {}
+
       onConnectionsChange(type, index) {
         if (app.configuringGraph) return;
         if (type === LiteGraph.INPUT) {
@@ -270,6 +274,8 @@ app.registerExtension({
         this.serialize_widgets = false;
         this.size = [210, 80];
       }
+
+      applyToGraph() {}
 
       onConnectionsChange(type, index) {
         if (app.configuringGraph) return;
