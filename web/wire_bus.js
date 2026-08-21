@@ -203,6 +203,28 @@ function findPackFromUnpack(unpack) {
   return upstream && isPack(upstream.node) ? upstream.node : null;
 }
 
+function displayType(type) {
+  const value = String(type || EMPTY_TYPE).trim();
+  return value && value !== EMPTY_TYPE ? value : null;
+}
+
+function numberDuplicateTypes(entries) {
+  const totals = new Map();
+  for (const entry of entries) {
+    const key = displayType(entry.type);
+    if (key) totals.set(key, (totals.get(key) || 0) + 1);
+  }
+  const seen = new Map();
+  return entries.map((entry, index) => {
+    const key = displayType(entry.type);
+    if (!key) return { ...entry, name: entry.name || `${labels().input} ${index + 1}` };
+    const total = totals.get(key) || 0;
+    const current = (seen.get(key) || 0) + 1;
+    seen.set(key, current);
+    return { ...entry, name: total > 1 ? `${key} ${current}` : key };
+  });
+}
+
 function connectedPackEntries(pack) {
   if (!pack?.graph) return [];
   const entries = [];
@@ -217,7 +239,7 @@ function connectedPackEntries(pack) {
       name: source.name || input.label || input.name || `${labels().input} ${entries.length + 1}`,
     });
   }
-  return entries;
+  return numberDuplicateTypes(entries);
 }
 
 function disconnectAllOutputLinks(node, outputIndex) {
@@ -300,14 +322,20 @@ function refreshPackSlots(pack) {
   const text = labels();
   localizeFixedPorts(pack);
 
+  const connected = [];
   for (let i = 0; i < (pack.inputs?.length || 0); i++) {
     const input = pack.inputs[i];
     if (!input || input.link == null) continue;
     const source = resolveUpstream(pack.graph, input.link);
     if (!source) continue;
     input.type = source.type || EMPTY_TYPE;
-    input.name = source.name || `${text.input} ${i + 1}`;
-    input.label = input.name;
+    connected.push({ input, source, type: input.type, name: source.name || input.name });
+  }
+
+  const numbered = numberDuplicateTypes(connected);
+  for (const entry of numbered) {
+    entry.input.name = entry.name;
+    entry.input.label = entry.name;
   }
 
   for (let i = (pack.inputs?.length || 0) - 2; i >= 0; i--) {
