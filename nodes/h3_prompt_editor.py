@@ -31,7 +31,9 @@ class H3PromptEditor(io.ComfyNode):
                 tooltip="可连接 IMAGE / VIDEO / AUDIO；前端显示为一个可接受多条虚拟连线的参考入口。",
             ),
             prefix="asset",
-            min=1,
+            # References are optional. The frontend only serializes hidden
+            # transport inputs for references that are actually connected.
+            min=0,
         )
 
         return io.Schema(
