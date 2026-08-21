@@ -1,6 +1,120 @@
 from __future__ import annotations
 
+import re
+
 from comfy_api.latest import io
+
+
+_SECTION_RE = re.compile(
+    r"(?im)^\s*(subject_definitions|summary|retention_analysis)\s*:\s*"
+)
+_STORYBOARD_HEADER_RE = re.compile(
+    r"(?im)^\s*\[(?:分镜脚本|分镜|镜头脚本|shot\s*list|storyboard)\]\s*$"
+)
+_SUBJECT_HEADER_RE = re.compile(
+    r"(?im)^\s*\[(?:全局参考|主体定义|主体设定|subject[_\s-]*definitions?|global\s*reference)\]\s*$"
+)
+_DEFINITION_LINE_RE = re.compile(
+    r"(?im)^\s*<(?:Subject|Picture|Video|Audio)\s+\d+>\s*(?:is\b|[:：-])?.*$"
+)
+_SHOT_RE = re.compile(r"(?im)^\s*\[Shot\s+\d+\]")
+
+
+def _split_official_sections(text: str) -> tuple[dict[str, str], str]:
+    """Pull official pre-detailed H3 sections out of a loose/global block."""
+    matches = list(_SECTION_RE.finditer(text))
+    if not matches:
+        return {}, text.strip()
+
+    sections: dict[str, str] = {}
+    leftovers: list[str] = []
+    cursor = 0
+    for index, match in enumerate(matches):
+        if match.start() > cursor:
+            chunk = text[cursor:match.start()].strip()
+            if chunk:
+                leftovers.append(chunk)
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        sections[match.group(1).lower()] = text[match.end():end].strip()
+        cursor = end
+    if cursor < len(text):
+        tail = text[cursor:].strip()
+        if tail:
+            leftovers.append(tail)
+    return sections, "\n\n".join(leftovers).strip()
+
+
+def _extract_definition_lines(text: str) -> tuple[str, str]:
+    """Use obvious <Subject/Picture/Video/Audio N> definitions as subject_definitions."""
+    definitions: list[str] = []
+    remaining: list[str] = []
+    for line in text.splitlines():
+        if _DEFINITION_LINE_RE.match(line):
+            definitions.append(line.strip())
+        else:
+            remaining.append(line)
+    return "\n".join(definitions).strip(), "\n".join(remaining).strip()
+
+
+def _restore_official_h3(compiled_prompt: str) -> str:
+    """Normalize the timeline editor's loose state back to an official-like H3 layout.
+
+    The visual editor intentionally stores all non-shot material in one Global box.
+    On execution we recover the canonical H3 boundaries:
+      subject_definitions -> optional summary/retention_analysis -> detailed_description.
+    Common AI headings such as [分镜脚本] are treated as aliases for
+    detailed_description rather than emitted literally.
+    """
+    text = str(compiled_prompt or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if text.startswith("{") and text.endswith("}"):
+        text = text[1:-1].strip()
+
+    # The frontend compiler currently places Global content after a leading
+    # detailed_description:. Remove that temporary wrapper before reconstructing
+    # the canonical section order.
+    text = re.sub(r"(?is)^\s*detailed[_\s-]*description\s*:\s*", "", text, count=1)
+
+    shot_match = _SHOT_RE.search(text)
+    if shot_match:
+        global_block = text[:shot_match.start()].strip()
+        detailed_body = text[shot_match.start():].strip()
+    else:
+        global_block = text
+        detailed_body = ""
+
+    # AI screenplay aliases are structural hints, not literal H3 output.
+    global_block = _STORYBOARD_HEADER_RE.sub("", global_block)
+    global_block = _SUBJECT_HEADER_RE.sub("subject_definitions:", global_block).strip()
+
+    sections, leftover = _split_official_sections(global_block)
+    subject_text = sections.get("subject_definitions", "").strip()
+
+    # When the source was a loose AI prompt, lift obvious asset/subject
+    # definitions into subject_definitions and keep the remaining global prose as
+    # the detailed_description intro (camera language, lighting, director notes).
+    if not subject_text:
+        extracted, leftover = _extract_definition_lines(leftover)
+        subject_text = extracted
+
+    parts = ["subject_definitions:"]
+    if subject_text:
+        parts.append(subject_text)
+
+    summary = sections.get("summary", "").strip()
+    if summary:
+        parts.extend(["summary:", summary])
+
+    retention = sections.get("retention_analysis", "").strip()
+    if retention:
+        parts.extend(["retention_analysis:", retention])
+
+    parts.append("detailed_description:")
+    if leftover:
+        parts.append(leftover)
+    if detailed_body:
+        parts.append(detailed_body)
+
+    return "\n\n".join(parts).strip()
 
 
 class H3ShotTimeline(io.ComfyNode):
@@ -78,11 +192,6 @@ class H3ShotTimeline(io.ComfyNode):
         # for this node, so accepting both forms keeps execution compatible.
         _ = assets, asset_inputs, duration, timeline_state
 
-        # The browser owns the visual state and continuously compiles it back to
-        # standards-compliant H3 plaintext.
-        text = str(compiled_prompt or "").strip()
-        if not text:
-            text = "detailed_description:"
-        if "detailed_description:" not in text.lower():
-            text = f"detailed_description:\n{text}"
-        return io.NodeOutput(text)
+        # The browser owns the visual editing state. At execution time normalize
+        # its loose/global representation back to the canonical H3 section order.
+        return io.NodeOutput(_restore_official_h3(compiled_prompt))
