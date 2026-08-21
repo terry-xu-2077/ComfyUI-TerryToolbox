@@ -1,6 +1,6 @@
 {
   "EnhancedFileSave": {
-    "display_name": "Terry | Enhanced File Save",
+    "display_name": "Terry Enhanced File Save",
     "description": "Save VIDEO / STRING / IMAGE / AUDIO from one input, with exact filenames, %date% timestamps and optional sequence numbers.",
     "inputs": {
       "data": {"name": "Content", "tooltip": "Supports VIDEO / STRING / IMAGE / AUDIO."},
@@ -26,13 +26,13 @@
     "outputs": {"0": {"name": "Original content"}}
   },
   "TerryVideoCompare": {
-    "display_name": "Terry | Video Compare",
+    "display_name": "Terry Video Compare",
     "description": "A/B synchronized video comparison preview. Drag the center divider to inspect differences; the bottom timeline controls both videos together.",
     "inputs": {"a": {"name": "A"}, "b": {"name": "B"}},
     "outputs": {"0": {"name": "A"}, "1": {"name": "B"}}
   },
   "TerryH3PromptEditor": {
-    "display_name": "Terry | H3 Prompt Editor",
+    "display_name": "Terry H3 Prompt Editor",
     "description": "Visual MiniMax H3 prompt editor with dynamic image, video and audio references. Use @ for media and / for H3 syntax commands; output is always standard H3 STRING text.",
     "inputs": {
       "prompt": {"name": "H3 Source"},
@@ -42,7 +42,7 @@
     "outputs": {"0": {"name": "H3 Prompt"}}
   },
   "TerryH3ShotTimeline": {
-    "display_name": "Terry | H3 Shot Timeline",
+    "display_name": "Terry H3 Shot Timeline",
     "description": "Lightweight editor for MiniMax H3 detailed_description with multi-reference assets, tagged shot descriptions, shot ordering and duration editing, plus optional soundscape/music fields.",
     "inputs": {
       "compiled_prompt": {"name": "H3 Timeline Source"},
@@ -53,13 +53,13 @@
     "outputs": {"0": {"name": "H3 Timeline Prompt"}}
   },
   "TerryWireBusPack": {
-    "display_name": "Terry | Wire Bus Pack",
+    "display_name": "Terry Wire Bus Pack",
     "description": "Bundle any number of connections into one virtual bus. Supports KJNodes Get/Set.",
     "inputs": {"wire": {"name": "Add Wire"}},
     "outputs": {"0": {"name": "Bus"}}
   },
   "TerryWireBusUnpack": {
-    "display_name": "Terry | Wire Bus Unpack",
+    "display_name": "Terry Wire Bus Unpack",
     "description": "Restore the original connection count, types and order from a virtual bus. Supports KJNodes Get/Set.",
     "inputs": {"bus": {"name": "Bus"}}
   }
