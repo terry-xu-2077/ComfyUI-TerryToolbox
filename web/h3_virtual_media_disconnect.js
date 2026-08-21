@@ -16,9 +16,7 @@ function nodeType(node) {
   );
 }
 
-function propFor(node) {
-  return TARGETS[nodeType(node)] || null;
-}
+function propFor(node) { return TARGETS[nodeType(node)] || null; }
 
 function localeIsZh() {
   try {
@@ -30,9 +28,7 @@ function localeIsZh() {
   }
 }
 
-function text(zh, en) {
-  return localeIsZh() ? zh : en;
-}
+function text(zh, en) { return localeIsZh() ? zh : en; }
 
 function linksOf(node) {
   const prop = propFor(node);
@@ -91,23 +87,20 @@ function mediaInputIndex(node) {
   }) ?? -1;
 }
 
-function eventLocalPos(node, event, pos) {
+function eventLocalPos(node, pos) {
   if (Array.isArray(pos) && pos.length >= 2) return pos;
-  const canvas = app.canvas;
-  const mouse = canvas?.graph_mouse;
+  const mouse = app.canvas?.graph_mouse;
   if (Array.isArray(mouse) && mouse.length >= 2 && node?.pos) {
     return [mouse[0] - node.pos[0], mouse[1] - node.pos[1]];
   }
   return null;
 }
 
-function hitMediaSocket(node, event, pos) {
+function hitMediaSocket(node, pos) {
   const index = mediaInputIndex(node);
   if (index < 0 || !linksOf(node).length) return false;
-  const local = eventLocalPos(node, event, pos);
+  const local = eventLocalPos(node, pos);
   if (!local) return false;
-
-  // getInputPos returns graph-space coordinates, while onMouseDown pos is normally node-local.
   const graphPos = node.getInputPos?.(index);
   if (!graphPos) return false;
   const socketLocal = [graphPos[0] - (node.pos?.[0] || 0), graphPos[1] - (node.pos?.[1] || 0)];
@@ -116,47 +109,81 @@ function hitMediaSocket(node, event, pos) {
   return dx * dx + dy * dy <= 18 * 18;
 }
 
+function socketMenuItems(node) {
+  const links = linksOf(node);
+  const items = links.map((link, index) => ({
+    content: `${index + 1}. ${sourceLabel(node, link, index)}`,
+    callback: () => removeOne(node, index),
+  }));
+  if (items.length) items.push(null);
+  items.push({
+    content: text("清空全部参考", "Clear all references"),
+    callback: () => clearLinks(node),
+  });
+  return items;
+}
+
+function showSocketMenu(node, event) {
+  const items = socketMenuItems(node);
+  const ContextMenu = globalThis.LiteGraph?.ContextMenu || globalThis.ContextMenu;
+  if (typeof ContextMenu === "function") {
+    new ContextMenu(items, {
+      event,
+      node,
+      title: text("移除参考", "Remove references"),
+    });
+    return true;
+  }
+  return false;
+}
+
+function consume(event) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  event?.stopImmediatePropagation?.();
+}
+
 function installNode(nodeType, nodeData) {
-  if (!TARGETS[nodeData?.name] || nodeType.prototype.__terryVirtualMediaDisconnect) return;
-  nodeType.prototype.__terryVirtualMediaDisconnect = true;
+  if (!TARGETS[nodeData?.name] || nodeType.prototype.__terryVirtualMediaDisconnectV2) return;
+  nodeType.prototype.__terryVirtualMediaDisconnectV2 = true;
 
   const oldMouseDown = nodeType.prototype.onMouseDown;
-  nodeType.prototype.onMouseDown = function (event, pos, canvas) {
-    // Native-looking behavior for the virtual multi-input socket: clicking the socket
-    // disconnects the virtual bundle because there is no real LiteGraph link to grab.
-    if ((event?.button ?? 0) === 0 && hitMediaSocket(this, event, pos)) {
-      clearLinks(this);
-      event?.preventDefault?.();
-      event?.stopPropagation?.();
-      return true;
+  nodeType.prototype.onMouseDown = function (event, pos) {
+    if (hitMediaSocket(this, pos)) {
+      const button = event?.button ?? 0;
+      if (button === 0) {
+        clearLinks(this);
+        consume(event);
+        return true;
+      }
+      if (button === 2) {
+        showSocketMenu(this, event);
+        consume(event);
+        return true;
+      }
     }
     return oldMouseDown?.apply(this, arguments);
+  };
+
+  const oldContextMenu = nodeType.prototype.onContextMenu;
+  nodeType.prototype.onContextMenu = function (event, pos) {
+    if (hitMediaSocket(this, pos)) {
+      showSocketMenu(this, event);
+      consume(event);
+      return true;
+    }
+    return oldContextMenu?.apply(this, arguments);
   };
 
   const oldMenu = nodeType.prototype.getExtraMenuOptions;
   nodeType.prototype.getExtraMenuOptions = function (_, options) {
     const result = oldMenu?.apply(this, arguments);
     const links = linksOf(this);
-    if (!links.length) return result;
-
-    options ||= arguments[1];
-    if (!Array.isArray(options)) return result;
-
-    const node = this;
-    const submenu = links.map((link, index) => ({
-      content: `${index + 1}. ${sourceLabel(node, link, index)}`,
-      callback: () => removeOne(node, index),
-    }));
-    submenu.push(null);
-    submenu.push({
-      content: text("清空全部参考", "Clear all references"),
-      callback: () => clearLinks(node),
-    });
-
+    if (!links.length || !Array.isArray(options)) return result;
     options.unshift({
       content: `${text("移除参考", "Remove references")} (${links.length})`,
       has_submenu: true,
-      submenu: { options: submenu },
+      submenu: { options: socketMenuItems(this) },
     });
     options.unshift(null);
     return result;
