@@ -83,8 +83,12 @@ def _restore_official_h3(compiled_prompt: str) -> str:
         detailed_body = ""
 
     # AI screenplay aliases are structural hints, not literal H3 output.
+    # [分镜脚本]/Storyboard becomes the detailed_description boundary below.
+    # [全局参考]/主体定义 marks the definition area, but we still separate only
+    # actual <Subject/Picture/Video/Audio N> definition lines so director/lighting
+    # prose can live in detailed_description where it belongs.
     global_block = _STORYBOARD_HEADER_RE.sub("", global_block)
-    global_block = _SUBJECT_HEADER_RE.sub("subject_definitions:", global_block).strip()
+    global_block = _SUBJECT_HEADER_RE.sub("", global_block).strip()
 
     sections, leftover = _split_official_sections(global_block)
     subject_text = sections.get("subject_definitions", "").strip()
