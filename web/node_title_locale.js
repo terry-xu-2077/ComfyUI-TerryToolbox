@@ -2,20 +2,20 @@ import { app } from "../../scripts/app.js";
 
 const NODE_TITLES = {
   EnhancedFileSave: {
-    en: "Terry | Enhanced File Save",
-    zh: "Terry | 增强文件保存",
+    en: "Terry Enhanced File Save",
+    zh: "Terry 增强文件保存",
   },
   TerryVideoCompare: {
-    en: "Terry | Video Compare",
-    zh: "Terry | 视频对比",
+    en: "Terry Video Compare",
+    zh: "Terry 视频对比",
   },
   TerryH3PromptEditor: {
-    en: "Terry | H3 Prompt Editor",
-    zh: "Terry | H3 提示词编辑器",
+    en: "Terry H3 Prompt Editor",
+    zh: "Terry H3 提示词编辑器",
   },
   TerryH3ShotTimeline: {
-    en: "Terry | H3 Shot Timeline",
-    zh: "Terry | H3 镜头时间轴",
+    en: "Terry H3 Shot Timeline",
+    zh: "Terry H3 镜头时间轴",
   },
 };
 
@@ -68,9 +68,6 @@ function syncAllNodeTitles() {
 app.registerExtension({
   name: "TerryToolbox.NodeTitleLocale",
 
-  // Backend V3 nodes are already official node definitions. We only overwrite
-  // their human-facing display_name at registration time so the node library,
-  // search results and both renderers receive the complete localized title.
   addCustomNodeDefs(defs) {
     for (const nodeId of Object.keys(NODE_TITLES)) {
       const def = defs?.[nodeId];
@@ -110,8 +107,6 @@ app.registerExtension({
   },
 
   setup() {
-    // Locale changes in current ComfyUI do not always retroactively update
-    // LiteGraph class titles, so keep existing canvas nodes in sync as well.
     let lastLanguage = currentLanguage();
     setInterval(() => {
       const nextLanguage = currentLanguage();
