@@ -70,10 +70,16 @@ class H3ShotTimeline(io.ComfyNode):
         duration: int = 15,
         timeline_state: str = "",
         assets: io.Autogrow.Type | None = None,
+        **asset_inputs,
     ) -> io.NodeOutput:
+        # ComfyUI 0.33 normalizes Autogrow.TemplatePrefix inputs as flat
+        # keyword arguments (asset1, asset2, ...), rather than necessarily
+        # passing a single `assets` mapping. These references are transport-only
+        # for this node, so accepting both forms keeps execution compatible.
+        _ = assets, asset_inputs, duration, timeline_state
+
         # The browser owns the visual state and continuously compiles it back to
-        # standards-compliant H3 plaintext. Assets are transport-only references;
-        # their values are intentionally unused by this backend node.
+        # standards-compliant H3 plaintext.
         text = str(compiled_prompt or "").strip()
         if not text:
             text = "detailed_description:"
