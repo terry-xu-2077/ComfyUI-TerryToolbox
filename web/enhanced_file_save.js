@@ -44,16 +44,40 @@ function setWidgetHidden(node, name, hidden) {
   if (!w) return;
 
   installHideAdapter(w);
-
   w.hidden = hidden;
 
-  if (w.options) {
-    w.options.hidden = hidden;
-  }
+  if (w.options) w.options.hidden = hidden;
+  if (w.element?.style) w.element.style.display = hidden ? "none" : "";
+}
 
-  if (w.element?.style) {
-    w.element.style.display = hidden ? "none" : "";
+function moveWidgetAfter(node, widget, anchorName) {
+  const widgets = node.widgets;
+  if (!Array.isArray(widgets) || !widget) return;
+
+  const current = widgets.indexOf(widget);
+  const anchor = widgets.findIndex((w) => w?.name === anchorName);
+  if (current < 0 || anchor < 0) return;
+
+  widgets.splice(current, 1);
+  const newAnchor = widgets.findIndex((w) => w?.name === anchorName);
+  widgets.splice(newAnchor + 1, 0, widget);
+}
+
+function moveWidgetBefore(node, widget, anchorNames) {
+  const widgets = node.widgets;
+  if (!Array.isArray(widgets) || !widget) return;
+
+  const current = widgets.indexOf(widget);
+  if (current < 0) return;
+
+  widgets.splice(current, 1);
+  let anchor = -1;
+  for (const name of anchorNames) {
+    anchor = widgets.findIndex((w) => w?.name === name);
+    if (anchor >= 0) break;
   }
+  if (anchor < 0) widgets.push(widget);
+  else widgets.splice(anchor, 0, widget);
 }
 
 function getGraphLink(graph, linkId) {
@@ -138,8 +162,9 @@ function syncTimestampRow(node) {
   if (!row) return;
 
   const enabled = getWidget(node, "use_timestamp")?.value === true;
-  row.element.style.display = enabled ? "flex" : "none";
   row.widget.hidden = !enabled;
+  if (row.widget.options) row.widget.options.hidden = !enabled;
+  row.element.style.display = enabled ? "flex" : "none";
 
   for (const [name] of TIMESTAMP_WIDGETS) {
     const checkbox = row.inputs[name];
@@ -169,7 +194,6 @@ function createTimestampRow(node) {
   element.appendChild(title);
 
   const inputs = {};
-
   for (const [name, labelText] of TIMESTAMP_WIDGETS) {
     const label = document.createElement("label");
     label.style.display = "inline-flex";
@@ -206,14 +230,50 @@ function createTimestampRow(node) {
     serialize: false,
     hideOnZoom: false,
   });
-
   widget.computeSize = function(width) {
     if (this.hidden) return [0, -4];
     return [width ?? 0, 34];
   };
 
   node.__terryTimestampRow = { element, widget, inputs };
+
+  // Nodes 2.0 appends DOM widgets to the end. Put this row back into the
+  // semantic position directly below the timestamp enable switch.
+  moveWidgetAfter(node, widget, "use_timestamp");
   syncTimestampRow(node);
+}
+
+function createMediaSeparator(node) {
+  if (node.__terryMediaSeparator || typeof node.addDOMWidget !== "function") return;
+
+  const element = document.createElement("div");
+  element.style.height = "12px";
+  element.style.boxSizing = "border-box";
+  element.style.margin = "0 8px";
+  element.style.borderTop = "1px solid color-mix(in srgb, var(--fg-color, #aaa) 25%, transparent)";
+  element.style.pointerEvents = "none";
+
+  const widget = node.addDOMWidget("terry_media_separator", "div", element, {
+    serialize: false,
+    hideOnZoom: false,
+  });
+  widget.computeSize = function(width) {
+    if (this.hidden) return [0, -4];
+    return [width ?? 0, 14];
+  };
+
+  node.__terryMediaSeparator = { element, widget };
+  moveWidgetBefore(node, widget, ALL_TYPE_WIDGETS);
+}
+
+function syncMediaSeparator(node, type) {
+  const separator = node.__terryMediaSeparator;
+  if (!separator) return;
+
+  const visible = !!type;
+  separator.widget.hidden = !visible;
+  if (separator.widget.options) separator.widget.options.hidden = !visible;
+  separator.element.style.display = visible ? "block" : "none";
 }
 
 function applyDynamicPanel(node) {
@@ -228,17 +288,22 @@ function applyDynamicPanel(node) {
     }
   }
 
-  // The four backend boolean widgets remain serialized, but are represented
-  // by one compact horizontal checkbox row in the UI.
+  // Keep backend booleans serialized but replace their four rows with one
+  // compact row immediately below the timestamp enable switch.
   for (const [name] of TIMESTAMP_WIDGETS) {
     setWidgetHidden(node, name, true);
   }
   createTimestampRow(node);
+  moveWidgetAfter(node, node.__terryTimestampRow?.widget, "use_timestamp");
   syncTimestampRow(node);
 
   const useSequence = getWidget(node, "append_sequence")?.value === true;
   setWidgetHidden(node, "sequence_start", !useSequence);
   setWidgetHidden(node, "sequence_padding", !useSequence);
+
+  createMediaSeparator(node);
+  moveWidgetBefore(node, node.__terryMediaSeparator?.widget, ALL_TYPE_WIDGETS);
+  syncMediaSeparator(node, type);
 
   if (type === "AUDIO") {
     const format = getWidget(node, "audio_format")?.value;
@@ -282,14 +347,13 @@ function schedulePanelRefresh(node) {
   queueMicrotask(() => applyDynamicPanel(node));
   requestAnimationFrame(() => applyDynamicPanel(node));
   setTimeout(() => applyDynamicPanel(node), 50);
+  setTimeout(() => applyDynamicPanel(node), 180);
 }
 
 function initNode(node) {
   if (!node) return;
 
-  for (const w of node.widgets ?? []) {
-    installHideAdapter(w);
-  }
+  for (const w of node.widgets ?? []) installHideAdapter(w);
 
   for (const name of [
     "use_timestamp",
@@ -303,6 +367,7 @@ function initNode(node) {
   }
 
   createTimestampRow(node);
+  createMediaSeparator(node);
   applyDynamicPanel(node);
   schedulePanelRefresh(node);
 }
