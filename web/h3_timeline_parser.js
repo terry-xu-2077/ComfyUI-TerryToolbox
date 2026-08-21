@@ -68,6 +68,7 @@ function extractSoundFields(source) {
 
 function splitPrompt(source) {
   // Loose Chinese AI screenplay format: everything before [分镜脚本] is Global description.
+  // [分镜脚本] / [Storyboard] is a semantic alias for H3 detailed_description.
   const looseHeader = /(?:^|\n)\s*\[(?:分镜脚本|分镜|镜头脚本|shot\s*list|storyboard)\]\s*/i;
   const loose = looseHeader.exec(source);
   if (loose) {
@@ -166,12 +167,10 @@ function parseH3(raw, fallbackTotal = 15) {
   if (!headers.length) throw new Error(t("没有识别到 Shot / 镜头标题。至少需要一个镜头。", "No Shot / 镜头 headings were found. At least one shot is required."));
 
   // If there was no explicit section splitter, everything before the first shot becomes Global.
-  // AI/freeform prompts still need a visible boundary between global setup and the shot list;
-  // preserve an existing [分镜脚本]/[Storyboard] separator, or synthesize the canonical marker.
+  // For structured AI prompts, [分镜脚本]/[Storyboard] is consumed as the boundary and
+  // the core timeline compiler emits the canonical `detailed_description:` field.
   const leading = split.body.slice(0, headers[0].start).trim();
-  const globalParts = [split.global, leading].filter(Boolean);
-  if (split.mode !== "official") globalParts.push(isZh() ? "[分镜脚本]" : "[Storyboard]");
-  const global = globalParts.join("\n\n");
+  const global = [split.global, leading].filter(Boolean).join("\n\n");
 
   const shots = [];
   const starts = [];
@@ -314,8 +313,8 @@ function openParser(node) {
 
   const hint = document.createElement("div"); hint.className = "terry-tl-parser-hint";
   hint.textContent = t(
-    "支持官方 H3，也支持常见 AI 分镜格式，例如 [全局参考] / [导演说明] / [视觉基调] / [分镜脚本]、镜头 1：标题、时间：00:00 - 00:04。标题名称和空格可以变化；无法精确对应的时间间隙会自动吸收到相邻镜头。",
-    "Supports official H3 and common AI screenplay formats such as [Global Reference] / [Director Notes] / [Storyboard], 镜头 1: title, and 时间: 00:00 - 00:04. Section names and spacing may vary; unsupported gaps are absorbed into adjacent shots."
+    "支持官方 H3，也支持常见 AI 分镜格式，例如 [全局参考] / [导演说明] / [视觉基调] / [分镜脚本]、镜头 1：标题、时间：00:00 - 00:04。[分镜脚本] 会作为 detailed_description 的分界进行转换。标题名称和空格可以变化；无法精确对应的时间间隙会自动吸收到相邻镜头。",
+    "Supports official H3 and common AI screenplay formats such as [Global Reference] / [Director Notes] / [Storyboard], 镜头 1: title, and 时间: 00:00 - 00:04. [Storyboard] is treated as the detailed_description boundary. Section names and spacing may vary; unsupported gaps are absorbed into adjacent shots."
   );
   const textarea = document.createElement("textarea"); textarea.className = "terry-tl-parser-text";
   textarea.placeholder = t("粘贴官方 H3 或 AI 编写的分镜提示词…", "Paste official H3 or an AI-written storyboard prompt…"); textarea.spellcheck = false;
