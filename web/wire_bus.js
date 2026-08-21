@@ -23,7 +23,10 @@ function getNode(graph, id) {
 }
 
 function isReroute(node) {
-  return node?.type === "Reroute" || node?.constructor?.type === "Reroute";
+  const type = String(
+    node?.type || node?.constructor?.type || node?.comfyClass || ""
+  ).toLowerCase();
+  return type === "reroute" || type.endsWith("reroute");
 }
 
 function resolveUpstream(graph, linkId, seen = new Set()) {
@@ -39,7 +42,10 @@ function resolveUpstream(graph, linkId, seen = new Set()) {
       nodeId: link.origin_id,
       slot: link.origin_slot,
       type: link.type || node.outputs?.[link.origin_slot]?.type || EMPTY_TYPE,
-      name: node.outputs?.[link.origin_slot]?.name || node.outputs?.[link.origin_slot]?.label || null,
+      name:
+        node.outputs?.[link.origin_slot]?.name ||
+        node.outputs?.[link.origin_slot]?.label ||
+        null,
     };
   }
   return resolveUpstream(graph, node.inputs?.[0]?.link, seen);
@@ -86,7 +92,8 @@ function connectedPackEntries(pack) {
       source,
       packSlot: i,
       type: source.type || input.type || EMPTY_TYPE,
-      name: source.name || input.label || input.name || `Input ${entries.length + 1}`,
+      name:
+        source.name || input.label || input.name || `输入 ${entries.length + 1}`,
     });
   }
   return entries;
@@ -117,7 +124,7 @@ function syncUnpack(unpack) {
 
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
-    unpack.addOutput(entry.name || `Output ${i + 1}`, entry.type || EMPTY_TYPE);
+    unpack.addOutput(entry.name || `输出 ${i + 1}`, entry.type || EMPTY_TYPE);
   }
 
   for (let i = 0; i < Math.min(outgoing.length, unpack.outputs?.length || 0); i++) {
@@ -155,19 +162,19 @@ function refreshPackSlots(pack) {
     const source = resolveUpstream(pack.graph, input.link);
     if (!source) continue;
     input.type = source.type || EMPTY_TYPE;
-    input.name = source.name || `Input ${i + 1}`;
+    input.name = source.name || `输入 ${i + 1}`;
     input.label = input.name;
   }
 
-  // Always leave one wildcard socket at the bottom, so the node grows naturally.
+  // 始终在底部保留一个通配输入口，连接后自动继续增长。
   for (let i = (pack.inputs?.length || 0) - 2; i >= 0; i--) {
     if (pack.inputs[i]?.link == null) pack.removeInput?.(i);
   }
   const last = pack.inputs?.[pack.inputs.length - 1];
   if (!last || last.link != null || last.type !== EMPTY_TYPE) {
-    pack.addInput("添加线束 / Add wire", EMPTY_TYPE);
+    pack.addInput("添加线束", EMPTY_TYPE);
   } else {
-    last.name = "添加线束 / Add wire";
+    last.name = "添加线束";
     last.label = last.name;
     last.type = EMPTY_TYPE;
   }
@@ -205,8 +212,15 @@ function patchGraphToPrompt() {
           if (!source) continue;
           const targets = collectDownstreamTargets(graph, unpack, outputIndex);
           for (const target of targets) {
-            if (isPack(target.node) || isUnpack(target.node) || isReroute(target.node)) continue;
-            const targetPrompt = prompt[String(target.nodeId)] || prompt[target.nodeId];
+            if (
+              isPack(target.node) ||
+              isUnpack(target.node) ||
+              isReroute(target.node)
+            ) {
+              continue;
+            }
+            const targetPrompt =
+              prompt[String(target.nodeId)] || prompt[target.nodeId];
             const input = target.node?.inputs?.[target.slot];
             if (!targetPrompt?.inputs || !input?.name) continue;
             targetPrompt.inputs[input.name] = [String(source.nodeId), source.slot];
@@ -229,18 +243,24 @@ app.registerExtension({
   },
 
   registerCustomNodes() {
-    class TerryWireBusPack {
+    const BaseNode = LiteGraph.LGraphNode || window.LGraphNode;
+    if (!BaseNode) {
+      console.error("[Terry Wire Bus] LGraphNode base class is unavailable");
+      return;
+    }
+
+    class TerryWireBusPack extends BaseNode {
       constructor() {
-        this.title = "线束汇总 / Bus Pack";
-        this.addInput("添加线束 / Add wire", EMPTY_TYPE);
-        this.addOutput("总线 / BUS", BUS_TYPE);
+        super("Terry | 线束汇总");
+        this.title = "Terry | 线束汇总";
+        this.addInput("添加线束", EMPTY_TYPE);
+        this.addOutput("总线", BUS_TYPE);
         this.isVirtualNode = true;
         this.serialize_widgets = false;
         this.size = [210, 90];
       }
 
-      // ComfyUI invokes this hook for virtual nodes while preparing a prompt.
-      // Expansion is handled centrally after graphToPrompt, so this is intentionally empty.
+      // Prompt 展开由 graphToPrompt 补丁统一处理。
       applyToGraph() {}
 
       onConnectionsChange(type, index) {
@@ -258,7 +278,7 @@ app.registerExtension({
       }
 
       onConnectOutput(slot, type, input, targetNode) {
-        return slot === 0 && (isUnpack(targetNode) || targetNode?.type === "Reroute");
+        return slot === 0 && (isUnpack(targetNode) || isReroute(targetNode));
       }
 
       onConfigure() {
@@ -266,10 +286,11 @@ app.registerExtension({
       }
     }
 
-    class TerryWireBusUnpack {
+    class TerryWireBusUnpack extends BaseNode {
       constructor() {
-        this.title = "线束还原 / Bus Unpack";
-        this.addInput("总线 / BUS", BUS_TYPE);
+        super("Terry | 线束还原");
+        this.title = "Terry | 线束还原";
+        this.addInput("总线", BUS_TYPE);
         this.isVirtualNode = true;
         this.serialize_widgets = false;
         this.size = [210, 80];
@@ -286,7 +307,7 @@ app.registerExtension({
 
       onConnectInput(slot, type, output, originNode) {
         if (slot !== 0) return false;
-        return type === BUS_TYPE || isPack(originNode) || originNode?.type === "Reroute";
+        return type === BUS_TYPE || isPack(originNode) || isReroute(originNode);
       }
 
       onConfigure() {
@@ -294,17 +315,20 @@ app.registerExtension({
       }
     }
 
-    LiteGraph.registerNodeType(
-      PACK_TYPE,
-      Object.assign(TerryWireBusPack, { title: "线束汇总 / Bus Pack" })
-    );
-    TerryWireBusPack.category = "TerryToolbox/线束整理";
+    Object.assign(TerryWireBusPack, {
+      title: "Terry | 线束汇总",
+      desc: "将任意数量、任意类型的线束汇总为一根总线。",
+    });
+    TerryWireBusPack.category = "Terry Toolbox/线束整理";
 
-    LiteGraph.registerNodeType(
-      UNPACK_TYPE,
-      Object.assign(TerryWireBusUnpack, { title: "线束还原 / Bus Unpack" })
-    );
-    TerryWireBusUnpack.category = "TerryToolbox/线束整理";
+    Object.assign(TerryWireBusUnpack, {
+      title: "Terry | 线束还原",
+      desc: "自动恢复总线中的线束数量、类型和原始顺序。",
+    });
+    TerryWireBusUnpack.category = "Terry Toolbox/线束整理";
+
+    LiteGraph.registerNodeType(PACK_TYPE, TerryWireBusPack);
+    LiteGraph.registerNodeType(UNPACK_TYPE, TerryWireBusUnpack);
   },
 
   afterConfigureGraph() {
