@@ -19,6 +19,28 @@ def _kind(value: Any) -> str:
     return "other"
 
 
+def _asset_items(assets: io.Autogrow.Type | None, asset_inputs: dict[str, Any]):
+    """Accept both grouped and flattened Autogrow inputs.
+
+    ComfyUI 0.33 can call execute with asset1/asset2/... keyword arguments for
+    TemplatePrefix inputs. Older/newer normalized paths may provide an `assets`
+    mapping instead, so support both and keep numeric ordering stable.
+    """
+    merged: dict[str, Any] = {}
+    if isinstance(assets, dict):
+        merged.update(assets)
+    for name, value in asset_inputs.items():
+        if name.startswith("asset") and name[5:].isdigit():
+            merged[name] = value
+
+    def order(item):
+        name = item[0]
+        suffix = name[5:] if name.startswith("asset") else ""
+        return int(suffix) if suffix.isdigit() else 10**9
+
+    return sorted(merged.items(), key=order)
+
+
 class H3PromptEditor(io.ComfyNode):
     """Visual MiniMax H3 prompt editor; output is always raw H3 plaintext."""
 
@@ -65,13 +87,14 @@ class H3PromptEditor(io.ComfyNode):
         prompt: str,
         visual_preview: bool = True,
         assets: io.Autogrow.Type | None = None,
+        **asset_inputs,
     ) -> io.NodeOutput:
         counts = {"picture": 0, "video": 0, "audio": 0, "other": 0}
         result = []
         temp = Path(folder_paths.get_temp_directory())
         temp.mkdir(parents=True, exist_ok=True)
 
-        for input_name, value in (assets or {}).items():
+        for input_name, value in _asset_items(assets, asset_inputs):
             kind = _kind(value)
             counts[kind] += 1
             idx = counts[kind]
