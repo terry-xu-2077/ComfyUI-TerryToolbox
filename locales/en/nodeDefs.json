@@ -1,0 +1,10 @@
+{
+  "TerryWireBusPack": {
+    "display_name": "Terry | Wire Bus Pack",
+    "description": "Bundle any number of connections into one virtual bus. Supports KJNodes Get/Set."
+  },
+  "TerryWireBusUnpack": {
+    "display_name": "Terry | Wire Bus Unpack",
+    "description": "Restore the original connection count, types and order from a virtual bus. Supports KJNodes Get/Set."
+  }
+}
