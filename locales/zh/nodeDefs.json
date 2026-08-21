@@ -1,6 +1,6 @@
 {
   "EnhancedFileSave": {
-    "display_name": "Terry | 增强文件保存",
+    "display_name": "Terry 增强文件保存",
     "description": "一个输入端接收 VIDEO / STRING / IMAGE / AUDIO，按真实输入类型自动保存，并提供精确文件名、%date% 时间戳和可选序列号。",
     "inputs": {
       "data": {"name": "内容", "tooltip": "支持 VIDEO / STRING / IMAGE / AUDIO。"},
@@ -26,13 +26,13 @@
     "outputs": {"0": {"name": "原内容"}}
   },
   "TerryVideoCompare": {
-    "display_name": "Terry | 视频对比",
+    "display_name": "Terry 视频对比",
     "description": "A/B 双路视频同步对比预览。拖动中间分割线观察画面差异；底部时间轴同步控制两路视频。",
     "inputs": {"a": {"name": "A"}, "b": {"name": "B"}},
     "outputs": {"0": {"name": "A"}, "1": {"name": "B"}}
   },
   "TerryH3PromptEditor": {
-    "display_name": "Terry | H3 提示词编辑器",
+    "display_name": "Terry H3 提示词编辑器",
     "description": "可视化编写 MiniMax H3 提示词；支持动态数量图片、视频、音频参考；@ 插入媒体，/ 打开 H3 语法菜单；输出始终为标准 H3 原文 STRING。",
     "inputs": {
       "prompt": {"name": "H3 原文"},
@@ -42,7 +42,7 @@
     "outputs": {"0": {"name": "H3 Prompt"}}
   },
   "TerryH3ShotTimeline": {
-    "display_name": "Terry | H3 镜头时间轴",
+    "display_name": "Terry H3 镜头时间轴",
     "description": "轻量编辑 MiniMax H3 的 detailed_description：支持多路参考素材、标签化镜头描述、镜头增删/排序/拖动接缝调时长，以及可选 overall_soundscape / non_diegetic_music。",
     "inputs": {
       "compiled_prompt": {"name": "H3 时间轴原文"},
@@ -53,13 +53,13 @@
     "outputs": {"0": {"name": "H3 Timeline Prompt"}}
   },
   "TerryWireBusPack": {
-    "display_name": "Terry | 线束汇总",
+    "display_name": "Terry 线束汇总",
     "description": "将任意数量、任意类型的连接汇总为一根虚拟总线，支持 KJNodes Get/Set。",
     "inputs": {"wire": {"name": "添加线束"}},
     "outputs": {"0": {"name": "总线"}}
   },
   "TerryWireBusUnpack": {
-    "display_name": "Terry | 线束还原",
+    "display_name": "Terry 线束还原",
     "description": "从虚拟总线自动恢复原始连接的数量、类型和顺序，支持 KJNodes Get/Set。",
     "inputs": {"bus": {"name": "总线"}}
   }
