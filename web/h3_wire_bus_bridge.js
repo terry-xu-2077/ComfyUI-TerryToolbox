@@ -10,6 +10,22 @@ const TARGETS = {
   TerryH3ShotTimeline: "terry_h3_timeline_virtual_media_links",
 };
 
+function patchBusWildcardCompatibility() {
+  const lite = globalThis.LiteGraph;
+  if (!lite || lite.__terryH3BusWildcardPatched || typeof lite.isValidConnection !== "function") return;
+  lite.__terryH3BusWildcardPatched = true;
+  const original = lite.isValidConnection.bind(lite);
+  lite.isValidConnection = function(typeA, typeB) {
+    const a = String(typeA ?? "").toUpperCase();
+    const b = String(typeB ?? "").toUpperCase();
+    if ((a === BUS_TYPE && (b === "*" || b.split(",").map((x) => x.trim()).includes("*"))) ||
+        (b === BUS_TYPE && (a === "*" || a.split(",").map((x) => x.trim()).includes("*")))) {
+      return true;
+    }
+    return original(typeA, typeB);
+  };
+}
+
 function nodeType(node) {
   return String(
     node?.comfyClass ||
@@ -260,6 +276,7 @@ function normalizeExpandedLinks(node, prop) {
 }
 
 function refreshAll() {
+  patchBusWildcardCompatibility();
   for (const graph of allGraphs()) {
     for (const node of graph?._nodes || []) {
       const prop = TARGETS[nodeType(node)];
@@ -270,6 +287,7 @@ function refreshAll() {
 
 let timer = null;
 function start() {
+  patchBusWildcardCompatibility();
   if (timer) return;
   timer = setInterval(refreshAll, 200);
 }
