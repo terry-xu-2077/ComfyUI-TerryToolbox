@@ -231,6 +231,7 @@ function installStyle() {
   const style = document.createElement("style");
   style.id = "terry-h3-timeline-lane-polish-style";
   style.textContent = `
+.terry-h3-timeline-root .terry-tl-rich{cursor:text!important}
 .terry-h3-timeline-root .terry-tl-lane{height:76px!important}
 .terry-h3-timeline-root .terry-tl-shot{padding:8px 9px 7px!important}
 .terry-h3-timeline-root .terry-tl-shot>b,
