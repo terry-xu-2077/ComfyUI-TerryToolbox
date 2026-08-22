@@ -99,10 +99,11 @@ function drawBusCable(ctx, start, end, color, baseWidth) {
   const laneWidth = Math.max(2.5, baseWidth);
   const spacing = laneWidth * 0.92;
   const lanes = [
-    { offset: -spacing * 1.5, alpha: 0.92 },
-    { offset: -spacing * 0.5, alpha: 0.56 },
-    { offset: spacing * 0.5, alpha: 0.92 },
-    { offset: spacing * 1.5, alpha: 0.56 },
+    { offset: -spacing * 2, alpha: 0.92 },
+    { offset: -spacing, alpha: 0.56 },
+    { offset: 0, alpha: 0.92 },
+    { offset: spacing, alpha: 0.56 },
+    { offset: spacing * 2, alpha: 0.92 },
   ];
 
   for (const lane of lanes) {
