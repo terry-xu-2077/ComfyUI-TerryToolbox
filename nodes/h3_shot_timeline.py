@@ -57,21 +57,11 @@ def _extract_definition_lines(text: str) -> tuple[str, str]:
 
 
 def _restore_official_h3(compiled_prompt: str) -> str:
-    """Normalize the timeline editor's loose state back to an official-like H3 layout.
-
-    The visual editor intentionally stores all non-shot material in one Global box.
-    On execution we recover the canonical H3 boundaries:
-      subject_definitions -> optional summary/retention_analysis -> detailed_description.
-    Common AI headings such as [分镜脚本] are treated as aliases for
-    detailed_description rather than emitted literally.
-    """
+    """Normalize the timeline editor's loose state back to an official-like H3 layout."""
     text = str(compiled_prompt or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     if text.startswith("{") and text.endswith("}"):
         text = text[1:-1].strip()
 
-    # The frontend compiler currently places Global content after a leading
-    # detailed_description:. Remove that temporary wrapper before reconstructing
-    # the canonical section order.
     text = re.sub(r"(?is)^\s*detailed[_\s-]*description\s*:\s*", "", text, count=1)
 
     shot_match = _SHOT_RE.search(text)
@@ -82,20 +72,12 @@ def _restore_official_h3(compiled_prompt: str) -> str:
         global_block = text
         detailed_body = ""
 
-    # AI screenplay aliases are structural hints, not literal H3 output.
-    # [分镜脚本]/Storyboard becomes the detailed_description boundary below.
-    # [全局参考]/主体定义 marks the definition area, but we still separate only
-    # actual <Subject/Picture/Video/Audio N> definition lines so director/lighting
-    # prose can live in detailed_description where it belongs.
     global_block = _STORYBOARD_HEADER_RE.sub("", global_block)
     global_block = _SUBJECT_HEADER_RE.sub("", global_block).strip()
 
     sections, leftover = _split_official_sections(global_block)
     subject_text = sections.get("subject_definitions", "").strip()
 
-    # When the source was a loose AI prompt, lift obvious asset/subject
-    # definitions into subject_definitions and keep the remaining global prose as
-    # the detailed_description intro (camera language, lighting, director notes).
     if not subject_text:
         extracted, leftover = _extract_definition_lines(leftover)
         subject_text = extracted
@@ -122,7 +104,7 @@ def _restore_official_h3(compiled_prompt: str) -> str:
 
 
 class H3ShotTimeline(io.ComfyNode):
-    """Lightweight visual editor for H3 detailed_description and its timeline-adjacent audio fields."""
+    """Timeline mode of the Terry H3 prompt editor."""
 
     @classmethod
     def define_schema(cls):
@@ -133,24 +115,22 @@ class H3ShotTimeline(io.ComfyNode):
                 tooltip="可连接 IMAGE / VIDEO / AUDIO；前端使用一个多路参考入口管理这些连接。",
             ),
             prefix="asset",
-            # References are optional. The frontend uses a virtual multi-input and
-            # only serializes transport inputs for references that are actually connected.
             min=0,
         )
 
         return io.Schema(
             node_id="TerryH3ShotTimeline",
-            display_name="Terry | H3 镜头时间轴",
+            display_name="Terry H3 Prompt Editor (Timeline)",
             category="Terry Toolbox/Text",
             search_aliases=[
+                "H3 prompt editor timeline",
                 "H3 timeline",
-                "H3 shot timeline",
                 "MiniMax timeline",
-                "镜头时间轴",
+                "提示词编辑器 时间轴",
                 "detailed_description",
             ],
             description=(
-                "轻量编辑 MiniMax H3 的 detailed_description：支持多路参考素材、标签化镜头描述、"
+                "Terry H3 提示词编辑器的时间轴模式：支持多路参考素材、标签化镜头描述、"
                 "镜头增删/排序/拖动接缝调时长，以及可选 overall_soundscape / non_diegetic_music。"
             ),
             inputs=[
@@ -177,7 +157,7 @@ class H3ShotTimeline(io.ComfyNode):
                 io.Autogrow.Input("assets", template=asset_template),
             ],
             outputs=[
-                io.String.Output("prompt", display_name="H3 Timeline Prompt"),
+                io.String.Output("prompt", display_name="H3 Prompt"),
             ],
         )
 
@@ -190,12 +170,5 @@ class H3ShotTimeline(io.ComfyNode):
         assets: io.Autogrow.Type | None = None,
         **asset_inputs,
     ) -> io.NodeOutput:
-        # ComfyUI 0.33 normalizes Autogrow.TemplatePrefix inputs as flat
-        # keyword arguments (asset1, asset2, ...), rather than necessarily
-        # passing a single `assets` mapping. These references are transport-only
-        # for this node, so accepting both forms keeps execution compatible.
         _ = assets, asset_inputs, duration, timeline_state
-
-        # The browser owns the visual editing state. At execution time normalize
-        # its loose/global representation back to the canonical H3 section order.
         return io.NodeOutput(_restore_official_h3(compiled_prompt))
