@@ -13,20 +13,6 @@ function nodeType(node) {
   );
 }
 
-function getLink(graph, id) {
-  if (!graph || id == null) return null;
-  for (const bag of [graph.links, graph._links]) {
-    if (!bag) continue;
-    if (typeof bag.get === "function") {
-      const hit = bag.get(id) ?? bag.get(String(id));
-      if (hit) return hit;
-    }
-    const hit = bag[id] ?? bag[String(id)];
-    if (hit) return hit;
-  }
-  return null;
-}
-
 function allLinks(graph) {
   const out = [];
   const seen = new Set();
@@ -88,20 +74,74 @@ function busColor(link) {
   );
 }
 
-function drawRibbon(ctx, start, end, color, width) {
-  const dx = Math.abs(end[0] - start[0]);
+function drawBusLane(ctx, start, end, color, width, offset) {
+  const sx = start[0];
+  const sy = start[1] + offset;
+  const ex = end[0];
+  const ey = end[1] + offset;
+  const dx = Math.abs(ex - sx);
   const tangent = Math.max(40, Math.min(180, dx * 0.5));
-  ctx.save();
+
   ctx.beginPath();
-  ctx.moveTo(start[0], start[1]);
-  ctx.bezierCurveTo(start[0] + tangent, start[1], end[0] - tangent, end[1], end[0], end[1]);
+  ctx.moveTo(sx, sy);
+  ctx.bezierCurveTo(sx + tangent, sy, ex - tangent, ey, ex, ey);
   ctx.strokeStyle = color;
-  ctx.globalAlpha = 0.62;
   ctx.lineWidth = width;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.stroke();
+}
+
+function drawBusCable(ctx, start, end, color, baseWidth) {
+  const laneWidth = Math.max(2.5, baseWidth);
+  const spacing = laneWidth * 1.05;
+  ctx.save();
+  ctx.globalAlpha = 0.78;
+  for (const offset of [-spacing, 0, spacing]) {
+    drawBusLane(ctx, start, end, color, laneWidth, offset);
+  }
   ctx.restore();
+}
+
+function hideBusLinksForNativeDraw(graph) {
+  const busLinks = allLinks(graph).filter((link) => isBusLink(graph, link));
+  if (!busLinks.length) return () => {};
+
+  const bags = [];
+  const seenBags = new Set();
+  for (const bag of [graph?.links, graph?._links]) {
+    if (!bag || seenBags.has(bag)) continue;
+    seenBags.add(bag);
+    bags.push(bag);
+  }
+
+  const removed = [];
+  for (const bag of bags) {
+    const isMap = typeof bag.delete === "function" && typeof bag.set === "function";
+    for (const link of busLinks) {
+      const id = link?.id ?? link?.link_id ?? link?.linkId;
+      if (id == null) continue;
+      const keys = [id, String(id)];
+      for (const key of keys) {
+        const exists = isMap
+          ? bag.has?.(key)
+          : Object.prototype.hasOwnProperty.call(bag, key);
+        if (!exists) continue;
+        const value = isMap ? bag.get(key) : bag[key];
+        removed.push({ bag, isMap, key, value });
+        if (isMap) bag.delete(key);
+        else delete bag[key];
+        break;
+      }
+    }
+  }
+
+  return () => {
+    for (const item of removed) {
+      if (item.isMap) item.bag.set(item.key, item.value);
+      else item.bag[item.key] = item.value;
+    }
+  };
 }
 
 function patchCanvas(canvas) {
@@ -110,26 +150,35 @@ function patchCanvas(canvas) {
   const original = canvas.drawConnections;
 
   canvas.drawConnections = function (ctx) {
+    const graph = this.graph || app.graph;
+    const busLinks = allLinks(graph).filter((link) => isBusLink(graph, link));
+    const restore = hideBusLinksForNativeDraw(graph);
+    let result;
+
     try {
-      const graph = this.graph || app.graph;
+      result = original.apply(this, arguments);
+    } finally {
+      restore();
+    }
+
+    try {
       const baseWidth = Math.max(3, Number(this.connections_width) || 3);
-      const ribbonWidth = Math.max(7, baseWidth * 2.15);
-      for (const link of allLinks(graph)) {
-        if (!isBusLink(graph, link)) continue;
+      for (const link of busLinks) {
         const { origin, target, originSlot, targetSlot } = linkNodes(graph, link);
         if (!origin || !target) continue;
-        drawRibbon(
+        drawBusCable(
           ctx,
           pointForOutput(origin, originSlot),
           pointForInput(target, targetSlot),
           busColor(link),
-          ribbonWidth
+          baseWidth
         );
       }
     } catch (error) {
-      console.warn("[Terry Wire Bus] Failed to draw bus ribbon", error);
+      console.warn("[Terry Wire Bus] Failed to draw bus cable", error);
     }
-    return original.apply(this, arguments);
+
+    return result;
   };
 }
 
