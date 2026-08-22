@@ -14,8 +14,8 @@ const NODE_TITLES = {
     zh: "Terry H3 提示词编辑器",
   },
   TerryH3ShotTimeline: {
-    en: "Terry H3 Shot Timeline",
-    zh: "Terry H3 镜头时间轴",
+    en: "Terry H3 Prompt Editor (Timeline)",
+    zh: "Terry H3 提示词编辑器（时间轴）",
   },
 };
 
