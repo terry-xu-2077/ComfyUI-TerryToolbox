@@ -166,6 +166,17 @@ function placeMenu(menu, editor, width = 470, maxHeight = 560) {
 function closeMenu(controller) { controller.menu?.remove?.(); controller.menu = null; controller.menuType = null; controller.commandState = null; }
 function currentFilter(node) { return String(node?.properties?.[FILTER_PROP] || "subject"); }
 function setFilter(node, value) { node.properties ||= {}; node.properties[FILTER_PROP] = value; app.graph?.change?.(); }
+function insertMediaReference(controller, hit, asset) {
+  const chip = makeChip(controller.mode, asset.raw, asset.displayLabel, asset.kind);
+  if (asset.preview && asset.kind !== "audio") { const img = document.createElement("img"); img.src = asset.preview; img.alt = ""; chip.prepend(img); }
+  insertAt(controller.editor, hit.range, chip, controller.onChange);
+  closeMenu(controller);
+}
+function insertSubjectReference(controller, hit, asset, subjectNumber = null) {
+  const number = Number(subjectNumber) || subjectFor(controller.node, controller.mode, asset);
+  insertAt(controller.editor, hit.range, makeChip(controller.mode, `<Subject ${number}>`, `主体 ${number}`, "subject"), controller.onChange);
+  closeMenu(controller);
+}
 
 function openAssetMenu(controller) {
   const { node, editor, mode } = controller;
@@ -190,9 +201,9 @@ function openAssetMenu(controller) {
   addTab("subject", "主体参考"); addTab("picture", "画面参考"); if (defined.length) addTab("defined", "已引用参考");
   legend.append(title, tabs); menu.append(legend);
 
-  const visible = filter === "defined" ? defined : all;
+  const visible = filter === "defined" ? defined : filter === "subject" ? all.filter((asset) => asset.kind !== "audio") : all;
   for (const asset of visible) {
-    const row = document.createElement("div"); row.className = `terry-h3-role-row${filter === "defined" ? " is-defined" : ""}`;
+    const row = document.createElement("div"); row.className = `terry-h3-role-row is-selectable${filter === "defined" ? " is-defined" : ""}`;
     const thumb = document.createElement("div"); thumb.className = `terry-h3-role-thumb is-${asset.kind}`;
     if (asset.preview && asset.kind !== "audio") { const img = document.createElement("img"); img.src = asset.preview; img.alt = ""; thumb.append(img); }
     else thumb.textContent = asset.kind === "audio" ? "♪" : asset.kind === "video" ? "▶" : "▧";
@@ -201,23 +212,22 @@ function openAssetMenu(controller) {
     const meta = document.createElement("small");
     meta.textContent = filter === "defined" ? referencedDescription(node, mode, asset, definitions) : `${asset.kind === "picture" ? "图片" : asset.kind === "video" ? "视频" : "音频"}资产 · ${asset.displayLabel}`;
     info.append(name, meta);
-    const actions = document.createElement("div"); actions.className = "terry-h3-role-actions";
-    if (filter === "subject" && asset.kind !== "audio") {
-      const existing = bindings(node)[asset.key]?.[0];
-      const button = menuButton(existing ? `主体 ${existing}` : "+ 主体", "作为可复用 Subject 引用", "is-primary");
-      button.addEventListener("pointerdown", (event) => { event.preventDefault(); event.stopPropagation(); const number = subjectFor(node, mode, asset); insertAt(editor, hit.range, makeChip(mode, `<Subject ${number}>`, `主体 ${number}`, "subject"), controller.onChange); closeMenu(controller); });
-      actions.append(button);
-    } else if (filter === "picture") {
-      const button = menuButton(asset.displayLabel, "直接引用该资产", "is-primary");
-      button.addEventListener("pointerdown", (event) => {
-        event.preventDefault(); event.stopPropagation();
-        const chip = makeChip(mode, asset.raw, asset.displayLabel, asset.kind);
-        if (asset.preview && asset.kind !== "audio") { const img = document.createElement("img"); img.src = asset.preview; img.alt = ""; chip.prepend(img); }
-        insertAt(editor, hit.range, chip, controller.onChange); closeMenu(controller);
-      });
-      actions.append(button);
-    }
-    row.append(thumb, info, actions); menu.append(row);
+    row.append(thumb, info);
+    row.addEventListener("pointerdown", (event) => {
+      event.preventDefault(); event.stopPropagation();
+      if (filter === "subject") {
+        insertSubjectReference(controller, hit, asset);
+        return;
+      }
+      if (filter === "picture") {
+        insertMediaReference(controller, hit, asset);
+        return;
+      }
+      const subjectNumber = (bindings(node)[asset.key] || []).map(Number).find(Number.isFinite);
+      if (subjectNumber) insertSubjectReference(controller, hit, asset, subjectNumber);
+      else insertMediaReference(controller, hit, asset);
+    });
+    menu.append(row);
   }
   if (!visible.length) { const empty = document.createElement("div"); empty.className = "terry-h3-role-empty"; empty.textContent = "没有匹配的参考资产。"; menu.append(empty); }
   placeMenu(menu, editor, 470, 560); return true;
@@ -303,8 +313,8 @@ export function installH3MenuStyles() {
 .terry-h3-role-menu{width:470px;max-height:560px;overflow:auto;padding:10px;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:var(--comfy-menu-bg,#17191c);box-shadow:0 18px 48px rgba(0,0,0,.52)}
 .terry-h3-role-legend{padding:0 2px 10px;border-bottom:1px solid rgba(255,255,255,.10)}
 .terry-h3-role-title{display:flex;align-items:center;justify-content:space-between;gap:12px}.terry-h3-role-title>b{font-size:13px}.terry-h3-role-title>span{font-size:10px;opacity:.5}
-.terry-h3-role-tabs{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}.terry-h3-role-action{min-height:28px;padding:3px 9px;border:1px solid rgba(255,255,255,.13);border-radius:6px;background:rgba(255,255,255,.05);color:inherit;cursor:pointer;font-size:11px;white-space:nowrap}.terry-h3-role-action.is-active,.terry-h3-role-action.is-primary{border-color:rgba(0,226,187,.38);background:rgba(0,226,187,.12);color:rgba(205,255,246,.98)}
-.terry-h3-role-row{display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 2px;border-bottom:1px solid rgba(255,255,255,.055)}.terry-h3-role-thumb{width:52px;height:52px;border-radius:7px;overflow:hidden;background:rgba(255,255,255,.07);display:grid;place-items:center}.terry-h3-role-thumb img{width:100%;height:100%;object-fit:cover}.terry-h3-role-info{min-width:0}.terry-h3-role-info b,.terry-h3-role-info small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.terry-h3-role-info b{font-size:11px}.terry-h3-role-info small{margin-top:3px;font-size:9.5px;opacity:.52}.terry-h3-role-row.is-defined .terry-h3-role-info small{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.35}.terry-h3-role-actions{display:flex;gap:5px}.terry-h3-role-empty{padding:18px 8px;text-align:center;font-size:11px;opacity:.55}
+.terry-h3-role-tabs{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}.terry-h3-role-action{min-height:28px;padding:3px 9px;border:1px solid rgba(255,255,255,.13);border-radius:6px;background:rgba(255,255,255,.05);color:inherit;cursor:pointer;font-size:11px;white-space:nowrap}.terry-h3-role-action.is-active{border-color:rgba(0,226,187,.38);background:rgba(0,226,187,.12);color:rgba(205,255,246,.98)}
+.terry-h3-role-row{display:grid;grid-template-columns:54px minmax(0,1fr);gap:10px;align-items:center;padding:9px 7px;border-bottom:1px solid rgba(255,255,255,.055);border-radius:7px}.terry-h3-role-row.is-selectable{cursor:pointer}.terry-h3-role-row.is-selectable:hover{background:rgba(255,255,255,.07)}.terry-h3-role-thumb{width:52px;height:52px;border-radius:7px;overflow:hidden;background:rgba(255,255,255,.07);display:grid;place-items:center}.terry-h3-role-thumb img{width:100%;height:100%;object-fit:cover}.terry-h3-role-info{min-width:0}.terry-h3-role-info b,.terry-h3-role-info small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.terry-h3-role-info b{font-size:11px}.terry-h3-role-info small{margin-top:3px;font-size:9.5px;opacity:.52}.terry-h3-role-row.is-defined .terry-h3-role-info small{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.35}.terry-h3-role-empty{padding:18px 8px;text-align:center;font-size:11px;opacity:.55}
 .terry-h3-command-menu{width:340px;max-height:380px;overflow:auto;padding:6px;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:var(--comfy-menu-bg,#17191c);box-shadow:0 18px 48px rgba(0,0,0,.52)}
 .terry-h3-command-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 6px 8px;border-bottom:1px solid rgba(255,255,255,.08)}.terry-h3-command-head-title{display:flex;align-items:center;gap:5px}.terry-h3-command-head span{font-size:9px;opacity:.48}.terry-h3-command-back{border:0;background:transparent;color:inherit;font-size:18px;cursor:pointer}.terry-h3-command-item{display:grid;grid-template-columns:70px minmax(0,1fr);gap:7px;align-items:center;width:100%;padding:7px;border:0;border-radius:6px;background:transparent;color:inherit;text-align:left;cursor:pointer}.terry-h3-command-item.is-category{grid-template-columns:28px minmax(0,1fr) auto}.terry-h3-command-item.is-active{background:rgba(255,255,255,.09)}.terry-h3-command-category,.terry-h3-command-category-icon,.terry-h3-command-count{font-size:9px;opacity:.55}.terry-h3-command-text{min-width:0}.terry-h3-command-text b,.terry-h3-command-text small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.terry-h3-command-text b{font-size:11px}.terry-h3-command-text small{margin-top:2px;font-size:9px;opacity:.5}
 `;
