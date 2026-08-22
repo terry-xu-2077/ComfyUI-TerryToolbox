@@ -105,6 +105,38 @@ function nativeBusPack(node) {
   return nodeType(source.node) === PACK_TYPE || source.type === BUS_TYPE ? source.node : null;
 }
 
+// Nodes 2.0 can fire onConnectionsChange before the new link is fully visible in
+// graph.links. Detect a BUS directly from the callback payload so the H3 legacy
+// virtual-reference converter cannot immediately disconnect the native BUS.
+function busFromLinkInfo(node, linkInfo) {
+  if (!linkInfo) return null;
+  const directType = String(
+    linkInfo.type ?? linkInfo.dataType ?? linkInfo.output_type ?? linkInfo.outputType ?? ""
+  ).toUpperCase();
+  if (directType === BUS_TYPE) return true;
+
+  const graph = node?.graph || app.graph;
+  const originId = linkInfo.origin_id ?? linkInfo.originId ?? linkInfo.from_id ?? linkInfo.fromId;
+  const originSlot = Number(linkInfo.origin_slot ?? linkInfo.originSlot ?? linkInfo.from_slot ?? linkInfo.fromSlot ?? 0) || 0;
+  const originNode = linkInfo.origin_node ?? linkInfo.originNode ?? linkInfo.fromNode ?? getNode(graph, originId);
+  if (!originNode) return null;
+  const originType = String(originNode.outputs?.[originSlot]?.type || directType || "").toUpperCase();
+  if (originType === BUS_TYPE || nodeType(originNode) === PACK_TYPE) return true;
+
+  if (isReroute(originNode) && originNode.inputs?.[0]?.link != null) {
+    const resolved = resolveUpstream(originNode.graph || graph, originNode.inputs[0].link);
+    if (resolved && (resolved.type === BUS_TYPE || nodeType(resolved.node) === PACK_TYPE)) return true;
+  }
+  if (isGet(originNode)) {
+    const setter = findSetter(originNode);
+    if (setter?.inputs?.[0]?.link != null) {
+      const resolved = resolveUpstream(setter.graph || graph, setter.inputs[0].link);
+      if (resolved && (resolved.type === BUS_TYPE || nodeType(resolved.node) === PACK_TYPE)) return true;
+    }
+  }
+  return null;
+}
+
 function collectBusMedia(node) {
   const pack = nativeBusPack(node);
   if (!pack?.graph) return [];
@@ -196,7 +228,9 @@ function installReferenceView(node) {
   if (typeof originalDisconnect === "function") {
     node.disconnectInput = function(index) {
       const mediaIndex = mediaInputIndex(this);
-      if (index === mediaIndex && performance.now() < Number(this.__terryProtectBusUntil || 0) && nativeBusPack(this)) {
+      // Protection is based on the connection event marker, not on graph lookup.
+      // This is required for Nodes 2.0, where graph.links may lag the callback.
+      if (index === mediaIndex && performance.now() < Number(this.__terryProtectBusUntil || 0)) {
         return;
       }
       return originalDisconnect.apply(this, arguments);
@@ -204,11 +238,15 @@ function installReferenceView(node) {
   }
 
   const originalConnections = node.onConnectionsChange;
-  node.onConnectionsChange = function(type, index, connected) {
+  node.onConnectionsChange = function(type, index, connected, linkInfo) {
     const input = this.inputs?.[index];
     const isMedia = String(input?.name || "") === "media";
-    const busConnected = isMedia && connected && nativeBusPack(this);
-    if (busConnected) this.__terryProtectBusUntil = performance.now() + 100;
+    const busConnected = isMedia && connected && (busFromLinkInfo(this, linkInfo) || nativeBusPack(this));
+    if (busConnected) {
+      // H3's own handler schedules convertConnection(..., 0). Keep the guard long
+      // enough to cover that timer in both legacy canvas and Nodes 2.0.
+      this.__terryProtectBusUntil = performance.now() + 750;
+    }
     const result = originalConnections?.apply(this, arguments);
     if (isMedia) queueMicrotask(() => refreshNode(this));
     return result;
