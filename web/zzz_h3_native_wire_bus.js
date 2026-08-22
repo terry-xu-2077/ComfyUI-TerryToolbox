@@ -47,6 +47,42 @@ function refreshNode(node) {
   node.graph?.setDirtyCanvas?.(true, true);
 }
 
+function isBusConnection(node, index, connected, linkInfo) {
+  if (!connected) return false;
+  const input = node?.inputs?.[Number(index)];
+  if (String(input?.name || "") !== "media") return false;
+  if (h3IsBusLinkInfo(node, linkInfo)) return true;
+
+  const originId = linkInfo?.origin_id ?? linkInfo?.originId ?? linkInfo?.from_id ?? linkInfo?.fromId;
+  const originSlot = Number(linkInfo?.origin_slot ?? linkInfo?.originSlot ?? linkInfo?.from_slot ?? linkInfo?.fromSlot ?? 0) || 0;
+  const graph = node?.graph || app.graph;
+  const origin = linkInfo?.origin_node ?? linkInfo?.originNode ?? linkInfo?.fromNode ?? graph?.getNodeById?.(Number(originId));
+  const originType = String(origin?.outputs?.[originSlot]?.type || linkInfo?.type || "").toUpperCase();
+  return originType === H3_BUS_TYPE;
+}
+
+function installTypeGuard(nodeType, nodeData) {
+  if (!TARGETS[String(nodeData?.name || "")] || nodeType.prototype.__terryNativeBusTypeGuard) return;
+  nodeType.prototype.__terryNativeBusTypeGuard = true;
+
+  // This runs at node-definition registration time, before any graph is restored.
+  // The legacy H3 handler turns every media connection into a virtual reference
+  // and then disconnects the real socket. BUS is different: it must remain a
+  // native visual connection and only be read internally by the H3 resolver.
+  const legacyConnections = nodeType.prototype.onConnectionsChange;
+  nodeType.prototype.onConnectionsChange = function(type, index, connected, linkInfo) {
+    if (isBusConnection(this, index, connected, linkInfo)) {
+      this.__terryProtectBusUntil = performance.now() + 5000;
+      queueMicrotask(() => {
+        installReferenceView(this);
+        refreshNode(this);
+      });
+      return;
+    }
+    return legacyConnections?.apply(this, arguments);
+  };
+}
+
 function installReferenceView(node) {
   const prop = TARGETS[h3NodeType(node)];
   if (!prop || node.__terryNativeBusInstalled) return;
@@ -100,9 +136,7 @@ function installReferenceView(node) {
     const isMedia = String(input?.name || "") === "media";
     const busConnected = isMedia && connected && (h3IsBusLinkInfo(this, linkInfo) || Boolean(h3ResolveNativeBus(this)));
     if (busConnected) {
-      // H3's legacy handler converts normal media connections into virtual inputs.
-      // BUS is intentionally native and must survive that delayed conversion path.
-      this.__terryProtectBusUntil = performance.now() + 750;
+      this.__terryProtectBusUntil = performance.now() + 5000;
     }
     const result = originalConnections?.apply(this, arguments);
     if (isMedia) queueMicrotask(() => refreshNode(this));
@@ -181,6 +215,9 @@ app.registerExtension({
     start();
     queueMicrotask(() => { patchAll(); patchCanvas(); });
     setTimeout(() => { patchAll(); patchCanvas(); }, 0);
+  },
+  beforeRegisterNodeDef(nodeType, nodeData) {
+    installTypeGuard(nodeType, nodeData);
   },
   nodeCreated(node) {
     queueMicrotask(() => installReferenceView(node));
