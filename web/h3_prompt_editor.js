@@ -1,5 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
+import { attachH3Menus } from "./h3_shared_menus.js";
 
 const NODE_ID = "TerryH3PromptEditor";
 const LINKS_PROP = "terry_h3_virtual_media_links";
@@ -124,7 +125,6 @@ function getMediaInputIndex(node) {
 function ensureSingleMediaInput(node) {
   if (!node) return;
   node.inputs ||= [];
-  // Remove backend/autogrow transport sockets from the visible node.
   for (let i = node.inputs.length - 1; i >= 0; i--) {
     const name = String(node.inputs[i]?.name || "");
     if (/^asset\d*$/i.test(name) || /^assets$/i.test(name)) {
@@ -262,7 +262,7 @@ function previewFromSource(node, kind) {
   const filename = filenameFromSource(node, kind);
   if (filename) {
     const w = (node.widgets || []).find((x) => {
-      const v = x?.value;
+      const v = w?.value;
       return String(typeof v === "object" ? (v?.filename || v?.name || "") : (v || "")) === filename;
     });
     const v = w?.value;
@@ -470,72 +470,6 @@ function appendRawEditor(editor, raw) {
   appendText(editor, raw);
 }
 
-function mentionRange(editor) {
-  const sel = window.getSelection?.();
-  if (!sel?.rangeCount || !sel.isCollapsed) return null;
-  const caret = sel.getRangeAt(0);
-  if (!editor.contains(caret.startContainer) || caret.startContainer.nodeType !== Node.TEXT_NODE) return null;
-  const text = caret.startContainer.textContent || "";
-  const before = text.slice(0, caret.startOffset);
-  const m = before.match(/@([^@\n]*)$/);
-  if (!m) return null;
-  const range = document.createRange();
-  range.setStart(caret.startContainer, caret.startOffset - m[0].length);
-  range.setEnd(caret.startContainer, caret.startOffset);
-  return { range, query: m[1].trim().toLowerCase() };
-}
-
-function closeMention(node) {
-  node.__terryH3Mention?.remove?.();
-  node.__terryH3Mention = null;
-}
-
-function openMention(node) {
-  if (viewMode(node) === VIEW_RAW) { closeMention(node); return; }
-  const editor = node.__terryH3Editor;
-  const hit = mentionRange(editor);
-  if (!hit) { closeMention(node); return; }
-  const options = mediaOptions(node).filter((o) => !hit.query || `${o.label} ${o.source}`.toLowerCase().includes(hit.query));
-  let menu = node.__terryH3Mention;
-  if (!menu) {
-    menu = document.createElement("div");
-    menu.className = "terry-h3-mention";
-    document.body.append(menu);
-    node.__terryH3Mention = menu;
-  }
-  menu.replaceChildren();
-  if (!options.length) {
-    const empty = document.createElement("div");
-    empty.className = "terry-h3-mention-empty";
-    empty.textContent = "先把图片 / 视频 / 音频连接到左侧参考输入";
-    menu.append(empty);
-  }
-  for (const option of options) {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "terry-h3-mention-item";
-    if (option.preview && option.kind !== "audio") {
-      const img = document.createElement("img"); img.src = option.preview; img.alt = ""; item.append(img);
-    } else {
-      const icon = document.createElement("span"); icon.className = "terry-h3-mention-icon"; icon.textContent = option.kind === "audio" ? "♪" : option.kind === "video" ? "▶" : "▧"; item.append(icon);
-    }
-    const text = document.createElement("span"); text.innerHTML = `<b>${option.label}</b><small>${option.source}</small>`; item.append(text);
-    item.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      hit.range.deleteContents();
-      const chip = makeMediaChip(node, option.kind, option.index, option.tag);
-      const after = document.createTextNode(CARET);
-      const frag = document.createDocumentFragment(); frag.append(chip, after); hit.range.insertNode(frag);
-      const sel = window.getSelection(); const r = document.createRange(); r.setStart(after, after.textContent.length); r.collapse(true); sel.removeAllRanges(); sel.addRange(r);
-      closeMention(node); syncFromEditor(node); editor.focus();
-    });
-    menu.append(item);
-  }
-  const rect = window.getSelection()?.rangeCount ? window.getSelection().getRangeAt(0).getBoundingClientRect() : editor.getBoundingClientRect();
-  menu.style.left = `${Math.max(8, Math.min(window.innerWidth - 290, rect.left || editor.getBoundingClientRect().left))}px`;
-  menu.style.top = `${Math.max(8, Math.min(window.innerHeight - 320, (rect.bottom || editor.getBoundingClientRect().top) + 6))}px`;
-}
-
 function parsePasted(node, editor, text) {
   const sel = window.getSelection?.();
   if (!sel?.rangeCount) return false;
@@ -579,9 +513,7 @@ function ensureEditor(node) {
   const assetState = document.createElement("span"); assetState.className = "terry-h3-state";
   tools.append(assetState, viewBtn); wrap.append(editor, tools);
 
-  editor.addEventListener("input", () => { syncFromEditor(node); if (viewMode(node) === VIEW_VISUAL) openMention(node); });
-  editor.addEventListener("beforeinput", (e) => { if (viewMode(node) === VIEW_VISUAL && e.inputType === "insertText" && e.data === "@") setTimeout(() => openMention(node), 0); });
-  editor.addEventListener("keyup", (e) => { if (e.key === "Escape") closeMention(node); else if (viewMode(node) === VIEW_VISUAL) openMention(node); e.stopPropagation(); });
+  editor.addEventListener("input", () => syncFromEditor(node));
   editor.addEventListener("keydown", (e) => e.stopPropagation());
   editor.addEventListener("paste", (e) => {
     e.preventDefault(); e.stopPropagation();
@@ -592,18 +524,22 @@ function ensureEditor(node) {
       parsePasted(node, editor, text);
     }
     syncFromEditor(node);
-    if (viewMode(node) === VIEW_VISUAL) {
-      // Re-render immediately so section/shot/dialogue tags pasted as plain text become visual chips too.
-      renderVisual(node, currentRaw(node));
-    }
+    if (viewMode(node) === VIEW_VISUAL) renderVisual(node, currentRaw(node));
   });
-  editor.addEventListener("blur", () => { syncFromEditor(node); setTimeout(() => closeMention(node), 150); });
+  editor.addEventListener("blur", () => syncFromEditor(node));
   wrap.addEventListener("pointerdown", (e) => e.stopPropagation());
 
   node.__terryH3Editor = editor;
   node.__terryH3ViewButton = viewBtn;
   node.__terryH3AssetState = assetState;
   node.__terryH3Wrap = wrap;
+  node.__terryH3MenuController = attachH3Menus({
+    node,
+    editor,
+    mode: "prompt",
+    onChange: () => syncFromEditor(node),
+  });
+
   const dom = node.addDOMWidget("terry_h3_editor", "terry_h3_editor", wrap, {
     serialize: false,
     margin: 10,
@@ -650,13 +586,7 @@ function installStyle() {
 .terry-h3-dialogue{background:rgba(0,226,187,.12);color:rgba(190,255,244,.98)}
 .terry-h3-media-chip{color:rgba(190,255,244,.98);background:rgba(0,226,187,.09)}
 .terry-h3-media-chip img{width:26px;height:26px;object-fit:cover;border-radius:3px}
-.terry-h3-media-icon,.terry-h3-mention-icon{display:grid;place-items:center;width:24px;height:24px;border-radius:3px;background:rgba(255,255,255,.09)}
-.terry-h3-mention{position:fixed;z-index:10080;width:280px;max-height:310px;overflow:auto;padding:5px;border:1px solid rgba(255,255,255,.15);border-radius:8px;background:var(--comfy-menu-bg,#202225);box-shadow:0 15px 36px rgba(0,0,0,.45)}
-.terry-h3-mention-item{display:grid;grid-template-columns:38px minmax(0,1fr);gap:8px;align-items:center;width:100%;min-height:44px;padding:4px 7px;border:0;border-radius:6px;background:transparent;color:inherit;text-align:left;cursor:pointer}
-.terry-h3-mention-item:hover{background:rgba(255,255,255,.09)}
-.terry-h3-mention-item img{width:36px;height:36px;object-fit:cover;border-radius:5px}
-.terry-h3-mention-item span:last-child{min-width:0}.terry-h3-mention-item b,.terry-h3-mention-item small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.terry-h3-mention-item b{font-size:12px}.terry-h3-mention-item small{margin-top:2px;font-size:10px;opacity:.55}
-.terry-h3-mention-empty{padding:10px;font-size:11px;opacity:.65}
+.terry-h3-media-icon{display:grid;place-items:center;width:24px;height:24px;border-radius:3px;background:rgba(255,255,255,.09)}
 `;
   document.head.append(style);
 }
