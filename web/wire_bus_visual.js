@@ -74,7 +74,7 @@ function busColor(link) {
   );
 }
 
-function drawBusLane(ctx, start, end, color, width, offset) {
+function drawBusLane(ctx, start, end, color, width, offset, alpha) {
   const sx = start[0];
   const sy = start[1] + offset;
   const ex = end[0];
@@ -82,25 +82,32 @@ function drawBusLane(ctx, start, end, color, width, offset) {
   const dx = Math.abs(ex - sx);
   const tangent = Math.max(40, Math.min(180, dx * 0.5));
 
+  ctx.save();
   ctx.beginPath();
   ctx.moveTo(sx, sy);
   ctx.bezierCurveTo(sx + tangent, sy, ex - tangent, ey, ex, ey);
   ctx.strokeStyle = color;
+  ctx.globalAlpha = alpha;
   ctx.lineWidth = width;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.stroke();
+  ctx.restore();
 }
 
 function drawBusCable(ctx, start, end, color, baseWidth) {
   const laneWidth = Math.max(2.5, baseWidth);
-  const spacing = laneWidth * 1.05;
-  ctx.save();
-  ctx.globalAlpha = 0.78;
-  for (const offset of [-spacing, 0, spacing]) {
-    drawBusLane(ctx, start, end, color, laneWidth, offset);
+  const spacing = laneWidth * 0.92;
+  const lanes = [
+    { offset: -spacing * 1.5, alpha: 0.92 },
+    { offset: -spacing * 0.5, alpha: 0.56 },
+    { offset: spacing * 0.5, alpha: 0.92 },
+    { offset: spacing * 1.5, alpha: 0.56 },
+  ];
+
+  for (const lane of lanes) {
+    drawBusLane(ctx, start, end, color, laneWidth, lane.offset, lane.alpha);
   }
-  ctx.restore();
 }
 
 function hideBusLinksForNativeDraw(graph) {
