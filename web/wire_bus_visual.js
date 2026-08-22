@@ -3,6 +3,7 @@ import { app } from "../../scripts/app.js";
 const BUS_TYPE = "TERRY_WIRE_BUS";
 const PACK_TYPE = "TerryWireBusPack";
 const UNPACK_TYPE = "TerryWireBusUnpack";
+const VUE_STYLE_ID = "terry-wire-bus-vue-port-style";
 
 function nodeType(node) {
   return String(
@@ -145,10 +146,57 @@ function drawCapsulePort(ctx, node, isOutput, slot = 0) {
   ctx.restore();
 }
 
+function installVuePortStyle() {
+  if (document.getElementById(VUE_STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = VUE_STYLE_ID;
+  style.textContent = `
+.terry-wire-bus-vue-pack .lg-slot--output [data-testid="slot-connection-dot"],
+.terry-wire-bus-vue-unpack .lg-slot--input [data-testid="slot-connection-dot"]{
+  position:relative;
+  overflow:visible;
+}
+.terry-wire-bus-vue-pack .lg-slot--output [data-testid="slot-connection-dot"]::before,
+.terry-wire-bus-vue-unpack .lg-slot--input [data-testid="slot-connection-dot"]::before{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:12px;
+  height:30px;
+  transform:translate(-50%,-50%);
+  border-radius:999px;
+  box-sizing:border-box;
+  background:rgba(156,163,175,.94);
+  border:1.35px solid rgba(255,255,255,.34);
+  box-shadow:inset 0 0 0 1px rgba(20,24,30,.18);
+  pointer-events:none;
+  z-index:0;
+}
+.terry-wire-bus-vue-pack .lg-slot--output [data-testid="slot-dot"],
+.terry-wire-bus-vue-unpack .lg-slot--input [data-testid="slot-dot"]{
+  position:relative;
+  z-index:1;
+}
+`;
+  document.head.append(style);
+}
+
+function tagVueBusNode(node) {
+  if (!node?.id) return;
+  const root = document.querySelector(`[data-node-id="${CSS.escape(String(node.id))}"]`);
+  if (!root) return;
+  const type = nodeType(node);
+  root.classList.toggle("terry-wire-bus-vue-pack", type === PACK_TYPE);
+  root.classList.toggle("terry-wire-bus-vue-unpack", type === UNPACK_TYPE);
+}
+
 function patchBusNode(node) {
-  if (!node || node.__terryBusCapsulePatched) return;
+  if (!node) return;
   const type = nodeType(node);
   if (type !== PACK_TYPE && type !== UNPACK_TYPE) return;
+  tagVueBusNode(node);
+  if (node.__terryBusCapsulePatched) return;
   node.__terryBusCapsulePatched = true;
 
   const originalForeground = node.onDrawForeground;
@@ -165,7 +213,11 @@ function patchBusNode(node) {
 }
 
 function patchExistingBusNodes() {
-  for (const node of app.graph?._nodes || []) patchBusNode(node);
+  installVuePortStyle();
+  for (const node of app.graph?._nodes || []) {
+    patchBusNode(node);
+    tagVueBusNode(node);
+  }
 }
 
 function hideBusLinksForNativeDraw(graph) {
@@ -249,18 +301,19 @@ function patchCanvas(canvas) {
 
 let timer = null;
 function ensurePatched() {
+  installVuePortStyle();
   patchCanvas(app.canvas);
   patchExistingBusNodes();
   if (timer) return;
   timer = setInterval(() => {
     patchCanvas(app.canvas);
     patchExistingBusNodes();
-  }, 1000);
+  }, 500);
 }
 
 app.registerExtension({
   name: "TerryToolbox.WireBusVisual",
   setup() { ensurePatched(); },
-  nodeCreated(node) { patchBusNode(node); },
-  loadedGraphNode(node) { patchBusNode(node); ensurePatched(); },
+  nodeCreated(node) { patchBusNode(node); setTimeout(() => tagVueBusNode(node), 0); },
+  loadedGraphNode(node) { patchBusNode(node); setTimeout(() => tagVueBusNode(node), 0); ensurePatched(); },
 });
