@@ -505,7 +505,8 @@ export function attachH3Menus({ node, editor, mode = "prompt", onChange = null }
 
   const onBeforeInput = (event) => {
     if (event.inputType !== "insertText" || (event.data !== "@" && event.data !== "/")) return;
-    queueMicrotask(() => event.data === "@" ? openAssetMenu(controller) : openCommandMenu(controller));
+    const trigger = event.data;
+    setTimeout(() => trigger === "@" ? openAssetMenu(controller) : openCommandMenu(controller), 0);
   };
   const onInput = () => { if (controller.menu) queueMicrotask(() => refreshOpenMenu(controller)); };
   const onKeyDown = (event) => {
