@@ -393,33 +393,6 @@ function serializeRich(editor) {
   return out.replace(/\u200B/g, "");
 }
 
-function insertAtCaret(editor, nodeToInsert) {
-  const sel = window.getSelection?.();
-  if (!sel?.rangeCount || !editor.contains(sel.anchorNode)) { editor.append(nodeToInsert); return; }
-  const range = sel.getRangeAt(0); range.deleteContents(); range.insertNode(nodeToInsert); range.setStartAfter(nodeToInsert); range.collapse(true); sel.removeAllRanges(); sel.addRange(range);
-}
-
-function openMention(node, editor, onChange) {
-  closeMentions();
-  const options = mediaOptions(node);
-  if (!options.length) return;
-  const menu = document.createElement("div"); menu.className = "terry-tl-mention";
-  for (const option of options) {
-    const btn = document.createElement("button"); btn.type = "button";
-    if (option.preview && option.kind !== "audio") { const img = document.createElement("img"); img.src = option.preview; btn.append(img); }
-    const text = document.createElement("span"); text.innerHTML = `<b>${option.label}</b><small>${option.source}</small>`; btn.append(text);
-    btn.addEventListener("pointerdown", (e) => {
-      e.preventDefault(); e.stopPropagation();
-      insertAtCaret(editor, tokenNode(option.raw, node)); menu.remove(); onChange(); editor.focus();
-    });
-    menu.append(btn);
-  }
-  document.body.append(menu);
-  const r = editor.getBoundingClientRect(); menu.style.left = `${Math.min(r.left, innerWidth - 290)}px`; menu.style.top = `${Math.min(r.bottom + 4, innerHeight - 260)}px`;
-}
-
-function closeMentions() { for (const m of document.querySelectorAll(".terry-tl-mention")) m.remove(); }
-
 function createRichEditor(node, value, placeholder, onChange) {
   const editor = document.createElement("div"); editor.className = "terry-tl-rich"; editor.contentEditable = "true"; editor.dataset.placeholder = placeholder;
   renderRich(editor, value, node);
@@ -428,14 +401,8 @@ function createRichEditor(node, value, placeholder, onChange) {
   editor.addEventListener("input", commit);
   editor.addEventListener("terrychange", commit);
   editor.addEventListener("keydown", (e) => { if (e.key === "Enter") e.stopPropagation(); });
-  editor.addEventListener("beforeinput", (e) => {
-    if (e.inputType === "insertText" && e.data === "@") {
-      e.preventDefault(); openMention(node, editor, commit);
-    }
-  });
   editor.addEventListener("blur", () => setTimeout(() => {
-    if (document.querySelector(".terry-tl-mention:hover")) return;
-    closeMentions(); const valueNow = serializeRich(editor);
+    const valueNow = serializeRich(editor);
     if (TOKEN_RE.test(valueNow)) { TOKEN_RE.lastIndex = 0; renderRich(editor, valueNow, node); }
   }, 100));
   return { editor, setValue(v) { if (v === lastValue) return; lastValue = v; renderRich(editor, v, node); }, refreshAssets() { const v = serializeRich(editor); renderRich(editor, v, node); } };
@@ -455,7 +422,7 @@ function createEditor(node) {
 
   const root = document.createElement("div"); root.className = "terry-h3-timeline-root";
   const header = document.createElement("div"); header.className = "terry-tl-header";
-  const title = document.createElement("b"); title.textContent = t("H3 镜头时间轴", "H3 Shot Timeline");
+  const title = document.createElement("b"); title.textContent = t("H3 提示词编辑器（时间轴）", "H3 Prompt Editor (Timeline)");
   const durationLabel = document.createElement("span");
   const durationRange = document.createElement("input"); durationRange.type = "range"; durationRange.min = "1"; durationRange.max = String(MAX_DURATION); durationRange.step = "1";
   const durationNumber = document.createElement("input"); durationNumber.type = "number"; durationNumber.min = "1"; durationNumber.max = String(MAX_DURATION); durationNumber.step = "1";
@@ -632,14 +599,13 @@ function installStyle() {
 .terry-tl-cards{display:flex;flex-direction:column;gap:6px;margin-top:8px}.terry-tl-card{display:grid;grid-template-columns:76px minmax(0,1fr) 28px;gap:6px;align-items:start;padding:6px;border:1px solid rgba(255,255,255,.09);border-radius:6px;background:rgba(0,0,0,.10)}.terry-tl-card.is-selected{border-color:rgba(255,255,255,.20);background:rgba(255,255,255,.045)}.terry-tl-card .terry-tl-rich{min-height:64px}.terry-tl-meta{border:0;background:transparent;color:inherit;text-align:left;cursor:pointer;padding:2px}.terry-tl-meta b,.terry-tl-meta small{display:block}.terry-tl-meta b{font-size:10px}.terry-tl-meta small{margin-top:3px;font-size:9px;line-height:1.35;opacity:.56}.terry-tl-delete{width:26px;height:26px;border:1px solid rgba(255,255,255,.10);border-radius:5px;background:rgba(255,255,255,.05);color:inherit;cursor:pointer;font-size:15px;opacity:.7}
 .terry-tl-audio{display:grid;grid-template-columns:1fr;gap:5px;margin-top:9px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08)}.terry-tl-option{display:flex;align-items:center;gap:6px;font-size:10px;opacity:.75;cursor:pointer}.terry-tl-audio textarea{width:100%;resize:vertical;box-sizing:border-box;padding:6px 7px;border:1px solid rgba(255,255,255,.09);border-radius:5px;background:rgba(0,0,0,.15);color:inherit;font:10.5px/1.45 ui-monospace,Consolas,monospace;outline:none}
 .terry-tl-footer{display:flex;justify-content:space-between;margin-top:6px;font-size:9px;opacity:.48}
-.terry-tl-mention{position:fixed;z-index:10120;width:280px;max-height:250px;overflow:auto;padding:5px;border:1px solid rgba(255,255,255,.15);border-radius:8px;background:var(--comfy-menu-bg,#202225);box-shadow:0 14px 34px rgba(0,0,0,.45)}.terry-tl-mention button{display:grid;grid-template-columns:38px minmax(0,1fr);gap:7px;align-items:center;width:100%;min-height:40px;padding:5px;border:0;border-radius:5px;background:transparent;color:inherit;text-align:left;cursor:pointer}.terry-tl-mention button:hover{background:rgba(255,255,255,.09)}.terry-tl-mention img{width:36px;height:36px;object-fit:cover;border-radius:4px}.terry-tl-mention b,.terry-tl-mention small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.terry-tl-mention b{font-size:11px}.terry-tl-mention small{margin-top:2px;font-size:9px;opacity:.5}
 `;
   document.head.append(style);
 }
 
 app.registerExtension({
   name: "TerryToolbox.H3ShotTimeline",
-  setup() { installStyle(); patchGraphToPrompt(); patchCanvas(); document.addEventListener("pointerdown", (e) => { if (!e.target.closest?.(".terry-tl-mention")) closeMentions(); }, true); },
+  setup() { installStyle(); patchGraphToPrompt(); patchCanvas(); },
   beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData?.name !== NODE_ID || nodeType.prototype.__terryH3TimelineInstalled) return;
     nodeType.prototype.__terryH3TimelineInstalled = true;
