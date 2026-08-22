@@ -107,10 +107,7 @@ function drawBusCable(ctx, start, end, color, baseWidth) {
     { offset: spacing, alpha: 0.56 },
     { offset: spacing * 2, alpha: 0.92 },
   ];
-
-  for (const lane of lanes) {
-    drawBusLane(ctx, start, end, color, laneWidth, lane.offset, lane.alpha);
-  }
+  for (const lane of lanes) drawBusLane(ctx, start, end, color, laneWidth, lane.offset, lane.alpha);
 }
 
 function roundedRect(ctx, x, y, width, height, radius) {
@@ -138,7 +135,6 @@ function drawCapsulePort(ctx, node, isOutput, slot = 0) {
   ctx.save();
   roundedRect(ctx, x - width * 0.5, y - height * 0.5, width, height, width * 0.5);
   ctx.fillStyle = busColor();
-  ctx.globalAlpha = 1;
   ctx.fill();
   ctx.lineWidth = 1.35;
   ctx.strokeStyle = "rgba(255,255,255,0.32)";
@@ -146,13 +142,42 @@ function drawCapsulePort(ctx, node, isOutput, slot = 0) {
   ctx.restore();
 }
 
-function installVuePortStyle() {
-  if (document.getElementById(VUE_STYLE_ID)) return;
-  const style = document.createElement("style");
-  style.id = VUE_STYLE_ID;
-  style.textContent = `
-.terry-wire-bus-vue-pack .lg-slot--output [data-testid="slot-connection-dot"],
-.terry-wire-bus-vue-unpack .lg-slot--input [data-testid="slot-connection-dot"]{
+function attrEscape(value) {
+  return String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+}
+
+function vueBusNodes() {
+  return (app.graph?._nodes || []).filter((node) => {
+    const type = nodeType(node);
+    return type === PACK_TYPE || type === UNPACK_TYPE;
+  });
+}
+
+function refreshVuePortStyle() {
+  let style = document.getElementById(VUE_STYLE_ID);
+  if (!style) {
+    style = document.createElement("style");
+    style.id = VUE_STYLE_ID;
+    document.head.append(style);
+  }
+
+  const packs = [];
+  const unpacks = [];
+  for (const node of vueBusNodes()) {
+    if (node?.id == null) continue;
+    const root = `[data-node-id="${attrEscape(node.id)}"]`;
+    if (nodeType(node) === PACK_TYPE) packs.push(`${root} .lg-slot--output [data-testid="slot-connection-dot"]`);
+    else unpacks.push(`${root} .lg-slot--input [data-testid="slot-connection-dot"]`);
+  }
+
+  const selectors = [...packs, ...unpacks];
+  const dotSelectors = [
+    ...packs.map((s) => `${s} [data-testid="slot-dot"]`),
+    ...unpacks.map((s) => `${s} [data-testid="slot-dot"]`),
+  ];
+
+  style.textContent = selectors.length ? `
+${selectors.join(",\n")}{
   position:relative;
   overflow:visible;
   width:12px !important;
@@ -168,30 +193,29 @@ function installVuePortStyle() {
   align-items:center;
   justify-content:center;
 }
-.terry-wire-bus-vue-pack .lg-slot--output [data-testid="slot-dot"],
-.terry-wire-bus-vue-unpack .lg-slot--input [data-testid="slot-dot"]{
+${dotSelectors.join(",\n")}{
   position:relative;
   z-index:1;
   flex:none;
 }
-`;
-  document.head.append(style);
+` : "";
 }
 
-function tagVueBusNode(node) {
-  if (!node?.id) return;
-  const root = document.querySelector(`[data-node-id="${CSS.escape(String(node.id))}"]`);
-  if (!root) return;
-  const type = nodeType(node);
-  root.classList.toggle("terry-wire-bus-vue-pack", type === PACK_TYPE);
-  root.classList.toggle("terry-wire-bus-vue-unpack", type === UNPACK_TYPE);
+let vueStyleQueued = false;
+function queueVueStyleRefresh() {
+  if (vueStyleQueued) return;
+  vueStyleQueued = true;
+  requestAnimationFrame(() => {
+    vueStyleQueued = false;
+    refreshVuePortStyle();
+  });
 }
 
 function patchBusNode(node) {
   if (!node) return;
   const type = nodeType(node);
   if (type !== PACK_TYPE && type !== UNPACK_TYPE) return;
-  tagVueBusNode(node);
+  queueVueStyleRefresh();
   if (node.__terryBusCapsulePatched) return;
   node.__terryBusCapsulePatched = true;
 
@@ -209,11 +233,8 @@ function patchBusNode(node) {
 }
 
 function patchExistingBusNodes() {
-  installVuePortStyle();
-  for (const node of app.graph?._nodes || []) {
-    patchBusNode(node);
-    tagVueBusNode(node);
-  }
+  for (const node of app.graph?._nodes || []) patchBusNode(node);
+  queueVueStyleRefresh();
 }
 
 function hideBusLinksForNativeDraw(graph) {
@@ -234,11 +255,8 @@ function hideBusLinksForNativeDraw(graph) {
     for (const link of busLinks) {
       const id = link?.id ?? link?.link_id ?? link?.linkId;
       if (id == null) continue;
-      const keys = [id, String(id)];
-      for (const key of keys) {
-        const exists = isMap
-          ? bag.has?.(key)
-          : Object.prototype.hasOwnProperty.call(bag, key);
+      for (const key of [id, String(id)]) {
+        const exists = isMap ? bag.has?.(key) : Object.prototype.hasOwnProperty.call(bag, key);
         if (!exists) continue;
         const value = isMap ? bag.get(key) : bag[key];
         removed.push({ bag, isMap, key, value });
@@ -267,7 +285,6 @@ function patchCanvas(canvas) {
     const busLinks = allLinks(graph).filter((link) => isBusLink(graph, link));
     const restore = hideBusLinksForNativeDraw(graph);
     let result;
-
     try {
       result = original.apply(this, arguments);
     } finally {
@@ -279,37 +296,23 @@ function patchCanvas(canvas) {
       for (const link of busLinks) {
         const { origin, target, originSlot, targetSlot } = linkNodes(graph, link);
         if (!origin || !target) continue;
-        drawBusCable(
-          ctx,
-          pointForOutput(origin, originSlot),
-          pointForInput(target, targetSlot),
-          busColor(link),
-          baseWidth
-        );
+        drawBusCable(ctx, pointForOutput(origin, originSlot), pointForInput(target, targetSlot), busColor(link), baseWidth);
       }
     } catch (error) {
       console.warn("[Terry Wire Bus] Failed to draw bus cable", error);
     }
-
     return result;
   };
 }
 
-let timer = null;
 function ensurePatched() {
-  installVuePortStyle();
   patchCanvas(app.canvas);
   patchExistingBusNodes();
-  if (timer) return;
-  timer = setInterval(() => {
-    patchCanvas(app.canvas);
-    patchExistingBusNodes();
-  }, 1000);
 }
 
 app.registerExtension({
   name: "TerryToolbox.WireBusVisual",
   setup() { ensurePatched(); },
-  nodeCreated(node) { patchBusNode(node); setTimeout(() => tagVueBusNode(node), 0); },
-  loadedGraphNode(node) { patchBusNode(node); setTimeout(() => tagVueBusNode(node), 0); ensurePatched(); },
+  nodeCreated(node) { patchBusNode(node); },
+  loadedGraphNode(node) { patchBusNode(node); patchCanvas(app.canvas); },
 });
