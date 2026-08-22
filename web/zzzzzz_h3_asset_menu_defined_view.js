@@ -93,10 +93,10 @@ function decorate(menu) {
   if (tabs) {
     tabs.replaceChildren();
     tabs.append(
-      makeTab("主体 · 内容", filter === "subject", () => { setFilter(node, "subject"); reopenAssetMenu(state); }),
-      makeTab("画面 · 图片", filter === "picture", () => { setFilter(node, "picture"); reopenAssetMenu(state); }),
+      makeTab("主体参考", filter === "subject", () => { setFilter(node, "subject"); reopenAssetMenu(state); }),
+      makeTab("画面参考", filter === "picture", () => { setFilter(node, "picture"); reopenAssetMenu(state); }),
     );
-    if (hasDefined) tabs.append(makeTab("已定义", filter === "defined", () => { setFilter(node, "defined"); reopenAssetMenu(state); }));
+    if (hasDefined) tabs.append(makeTab("已引用参考", filter === "defined", () => { setFilter(node, "defined"); reopenAssetMenu(state); }));
   }
 
   const help = legend?.querySelector(".terry-h3-role-help");
