@@ -155,28 +155,24 @@ function installVuePortStyle() {
 .terry-wire-bus-vue-unpack .lg-slot--input [data-testid="slot-connection-dot"]{
   position:relative;
   overflow:visible;
-}
-.terry-wire-bus-vue-pack .lg-slot--output [data-testid="slot-connection-dot"]::before,
-.terry-wire-bus-vue-unpack .lg-slot--input [data-testid="slot-connection-dot"]::before{
-  content:"";
-  position:absolute;
-  left:50%;
-  top:50%;
-  width:12px;
-  height:30px;
-  transform:translate(-50%,-50%);
+  width:12px !important;
+  min-width:12px !important;
+  height:30px !important;
+  min-height:30px !important;
   border-radius:999px;
   box-sizing:border-box;
   background:rgba(156,163,175,.94);
   border:1.35px solid rgba(255,255,255,.34);
   box-shadow:inset 0 0 0 1px rgba(20,24,30,.18);
-  pointer-events:none;
-  z-index:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
 }
 .terry-wire-bus-vue-pack .lg-slot--output [data-testid="slot-dot"],
 .terry-wire-bus-vue-unpack .lg-slot--input [data-testid="slot-dot"]{
   position:relative;
   z-index:1;
+  flex:none;
 }
 `;
   document.head.append(style);
@@ -308,7 +304,7 @@ function ensurePatched() {
   timer = setInterval(() => {
     patchCanvas(app.canvas);
     patchExistingBusNodes();
-  }, 500);
+  }, 1000);
 }
 
 app.registerExtension({
