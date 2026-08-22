@@ -1,5 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
+import { attachH3Menus } from "./h3_shared_menus.js";
 
 const NODE_ID = "TerryH3ShotTimeline";
 const LINKS_PROP = "terry_h3_timeline_virtual_media_links";
@@ -61,9 +62,7 @@ function normalizeDurations(shots, total) {
   if (!sum) return;
   let remaining = total;
   let flex = sum;
-  for (const shot of shots) {
-    shot.duration = shot.duration / flex * remaining;
-  }
+  for (const shot of shots) shot.duration = shot.duration / flex * remaining;
   for (let pass = 0; pass < 5; pass++) {
     const low = shots.filter((s) => s.duration < MIN_SHOT);
     if (!low.length) break;
@@ -162,7 +161,6 @@ function parseSavedState(raw, fallbackText, fallbackDuration) {
   return { total, selected: 0, ...parsed };
 }
 
-/* --------------------------- reference transport --------------------------- */
 function ensureLinks(node) {
   node.properties ||= {};
   if (!Array.isArray(node.properties[LINKS_PROP])) node.properties[LINKS_PROP] = [];
@@ -339,7 +337,6 @@ function mediaOptions(node) {
   });
 }
 
-/* ------------------------------ rich editors ------------------------------ */
 const TOKEN_RE = /(<(?:Subject|Picture|Video|Audio)\s+\d+>|\(S\d+\)|<d>\[[^\]]+\][\s\S]*?<\/d>)/gi;
 
 function makeChip(raw, text, cls = "") {
@@ -405,10 +402,10 @@ function createRichEditor(node, value, placeholder, onChange) {
     const valueNow = serializeRich(editor);
     if (TOKEN_RE.test(valueNow)) { TOKEN_RE.lastIndex = 0; renderRich(editor, valueNow, node); }
   }, 100));
-  return { editor, setValue(v) { if (v === lastValue) return; lastValue = v; renderRich(editor, v, node); }, refreshAssets() { const v = serializeRich(editor); renderRich(editor, v, node); } };
+  const menuController = attachH3Menus({ node, editor, mode: "timeline", onChange: commit });
+  return { editor, menuController, setValue(v) { if (v === lastValue) return; lastValue = v; renderRich(editor, v, node); }, refreshAssets() { const v = serializeRich(editor); renderRich(editor, v, node); } };
 }
 
-/* ---------------------------------- UI ---------------------------------- */
 function createEditor(node) {
   const textWidget = widget(node, "compiled_prompt");
   const durationWidget = widget(node, "duration");
