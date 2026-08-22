@@ -42,15 +42,15 @@
     "outputs": {"0": {"name": "H3 Prompt"}}
   },
   "TerryH3ShotTimeline": {
-    "display_name": "Terry H3 镜头时间轴",
-    "description": "轻量编辑 MiniMax H3 的 detailed_description：支持多路参考素材、标签化镜头描述、镜头增删/排序/拖动接缝调时长，以及可选 overall_soundscape / non_diegetic_music。",
+    "display_name": "Terry H3 提示词编辑器（时间轴）",
+    "description": "Terry H3 提示词编辑器的时间轴模式：支持多路参考素材、标签化镜头描述、镜头增删/排序/拖动接缝调时长，以及可选 overall_soundscape / non_diegetic_music。",
     "inputs": {
       "compiled_prompt": {"name": "H3 时间轴原文"},
       "duration": {"name": "总时长"},
       "timeline_state": {"name": "时间轴状态"},
       "asset": {"name": "参考", "tooltip": "可连接 IMAGE / VIDEO / AUDIO 参考。"}
     },
-    "outputs": {"0": {"name": "H3 Timeline Prompt"}}
+    "outputs": {"0": {"name": "H3 Prompt"}}
   },
   "TerryWireBusPack": {
     "display_name": "Terry 线束汇总",
