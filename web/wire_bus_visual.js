@@ -2,6 +2,7 @@ import { app } from "../../scripts/app.js";
 
 const BUS_TYPE = "TERRY_WIRE_BUS";
 const PACK_TYPE = "TerryWireBusPack";
+const UNPACK_TYPE = "TerryWireBusUnpack";
 
 function nodeType(node) {
   return String(
@@ -65,7 +66,7 @@ function pointForInput(node, slot) {
   return [Number(node?.pos?.[0] || 0), Number(node?.pos?.[1] || 0) + 40 + slot * 20];
 }
 
-function busColor(link) {
+function busColor(link = null) {
   return (
     link?.color ||
     globalThis.LGraphCanvas?.link_type_colors?.[BUS_TYPE] ||
@@ -109,6 +110,62 @@ function drawBusCable(ctx, start, end, color, baseWidth) {
   for (const lane of lanes) {
     drawBusLane(ctx, start, end, color, laneWidth, lane.offset, lane.alpha);
   }
+}
+
+function roundedRect(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width * 0.5, height * 0.5);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawCapsulePort(ctx, node, isOutput, slot = 0) {
+  const global = isOutput ? pointForOutput(node, slot) : pointForInput(node, slot);
+  const x = global[0] - Number(node?.pos?.[0] || 0);
+  const y = global[1] - Number(node?.pos?.[1] || 0);
+  const width = 12;
+  const height = 30;
+
+  ctx.save();
+  roundedRect(ctx, x - width * 0.5, y - height * 0.5, width, height, width * 0.5);
+  ctx.fillStyle = busColor();
+  ctx.globalAlpha = 1;
+  ctx.fill();
+  ctx.lineWidth = 1.35;
+  ctx.strokeStyle = "rgba(255,255,255,0.32)";
+  ctx.stroke();
+  ctx.restore();
+}
+
+function patchBusNode(node) {
+  if (!node || node.__terryBusCapsulePatched) return;
+  const type = nodeType(node);
+  if (type !== PACK_TYPE && type !== UNPACK_TYPE) return;
+  node.__terryBusCapsulePatched = true;
+
+  const originalForeground = node.onDrawForeground;
+  node.onDrawForeground = function (ctx) {
+    const result = originalForeground?.apply?.(this, arguments);
+    try {
+      if (nodeType(this) === PACK_TYPE) drawCapsulePort(ctx, this, true, 0);
+      else if (nodeType(this) === UNPACK_TYPE) drawCapsulePort(ctx, this, false, 0);
+    } catch (error) {
+      console.warn("[Terry Wire Bus] Failed to draw bus capsule port", error);
+    }
+    return result;
+  };
+}
+
+function patchExistingBusNodes() {
+  for (const node of app.graph?._nodes || []) patchBusNode(node);
 }
 
 function hideBusLinksForNativeDraw(graph) {
@@ -193,12 +250,17 @@ function patchCanvas(canvas) {
 let timer = null;
 function ensurePatched() {
   patchCanvas(app.canvas);
+  patchExistingBusNodes();
   if (timer) return;
-  timer = setInterval(() => patchCanvas(app.canvas), 1000);
+  timer = setInterval(() => {
+    patchCanvas(app.canvas);
+    patchExistingBusNodes();
+  }, 1000);
 }
 
 app.registerExtension({
   name: "TerryToolbox.WireBusVisual",
   setup() { ensurePatched(); },
-  loadedGraphNode() { ensurePatched(); },
+  nodeCreated(node) { patchBusNode(node); },
+  loadedGraphNode(node) { patchBusNode(node); ensurePatched(); },
 });
