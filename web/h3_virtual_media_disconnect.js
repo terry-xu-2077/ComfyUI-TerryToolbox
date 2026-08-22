@@ -1,5 +1,6 @@
 import { app } from "../../scripts/app.js";
 
+const BUS_TYPE = "TERRY_WIRE_BUS";
 const TARGETS = {
   TerryH3PromptEditor: "terry_h3_virtual_media_links",
   TerryH3ShotTimeline: "terry_h3_timeline_virtual_media_links",
@@ -34,12 +35,13 @@ function text(zh, en) {
   return localeIsZh() ? zh : en;
 }
 
-function linksOf(node) {
+function rawDirectLinks(node) {
+  if (node?.__terryNativeBus?.getDirectLinks) return node.__terryNativeBus.getDirectLinks();
   const prop = propFor(node);
   if (!prop) return [];
   node.properties ||= {};
-  if (!Array.isArray(node.properties[prop])) node.properties[prop] = [];
-  return node.properties[prop];
+  const links = Array.isArray(node.properties[prop]) ? node.properties[prop] : [];
+  return links.filter((link) => String(link?.source_type || "").toUpperCase() !== BUS_TYPE);
 }
 
 function refreshNode(node) {
@@ -50,7 +52,11 @@ function refreshNode(node) {
   node.graph?.setDirtyCanvas?.(true, true);
 }
 
-function setLinks(node, next) {
+function setDirectLinks(node, next) {
+  if (node?.__terryNativeBus?.setDirectLinks) {
+    node.__terryNativeBus.setDirectLinks(Array.isArray(next) ? next : []);
+    return true;
+  }
   const prop = propFor(node);
   if (!prop) return false;
   node.properties ||= {};
@@ -61,9 +67,17 @@ function setLinks(node, next) {
   return true;
 }
 
-function clearLinks(node) {
-  if (!linksOf(node).length) return false;
-  return setLinks(node, []);
+function hasBus(node) {
+  return Boolean(node?.__terryNativeBus?.hasBus?.());
+}
+
+function clearAll(node) {
+  setDirectLinks(node, []);
+  node?.__terryNativeBus?.disconnectBus?.();
+  delete node?.properties?.terry_h3_wire_bus_visual_state;
+  refreshNode(node);
+  node.graph?.change?.();
+  app.graph?.change?.();
 }
 
 function sourceLabel(node, link, index) {
@@ -76,43 +90,62 @@ function sourceLabel(node, link, index) {
   return name || type || `${text("参考", "Reference")} ${index + 1}`;
 }
 
-function removeOne(node, index) {
-  const links = [...linksOf(node)];
+function removeOneDirect(node, index) {
+  const links = rawDirectLinks(node);
   if (index < 0 || index >= links.length) return;
   links.splice(index, 1);
-  setLinks(node, links);
+  setDirectLinks(node, links);
 }
 
 function singleRemoveSubmenu(node) {
-  return linksOf(node).map((link, index) => ({
+  const result = rawDirectLinks(node).map((link, index) => ({
     content: `${index + 1}. ${sourceLabel(node, link, index)}`,
-    callback: () => removeOne(node, index),
+    callback: () => removeOneDirect(node, index),
   }));
+  if (hasBus(node)) {
+    result.push({
+      content: `🚌 ${text("总线参考", "Wire bus reference")}`,
+      callback: () => node?.__terryNativeBus?.disconnectBus?.(),
+    });
+  }
+  return result;
 }
 
 function installNode(nodeType, nodeData) {
-  if (!TARGETS[nodeData?.name] || nodeType.prototype.__terryRemoveReferenceInputsMenu) return;
-  nodeType.prototype.__terryRemoveReferenceInputsMenu = true;
+  if (!TARGETS[nodeData?.name] || nodeType.prototype.__terryRemoveReferenceInputsMenuV2) return;
+  nodeType.prototype.__terryRemoveReferenceInputsMenuV2 = true;
 
   const oldMenu = nodeType.prototype.getExtraMenuOptions;
-  nodeType.prototype.getExtraMenuOptions = function (_, options) {
-    const result = oldMenu?.apply(this, arguments);
-    const links = linksOf(this);
-    if (!links.length || !Array.isArray(options)) return result;
+  nodeType.prototype.getExtraMenuOptions = function (canvas, options) {
+    let result;
+    try {
+      result = oldMenu?.apply(this, arguments);
+    } catch (error) {
+      console.warn("[Terry H3] Existing context menu extension failed; keeping base menu available.", error);
+    }
 
-    const node = this;
-    const removeAll = {
-      content: text("✂️ 移除所有参考输入", "✂️ Remove all reference inputs"),
-      callback: () => clearLinks(node),
-    };
-    const removeOneMenu = {
-      content: text("移除单个参考输入", "Remove a reference input"),
-      has_submenu: true,
-      submenu: { options: singleRemoveSubmenu(node) },
-    };
+    try {
+      if (!Array.isArray(options)) return result;
+      const direct = rawDirectLinks(this);
+      const bus = hasBus(this);
+      if (!direct.length && !bus) return result;
 
-    // Keep both actions at the same context-menu level, with the per-reference submenu directly below Remove All.
-    options.unshift(null, removeAll, removeOneMenu);
+      const node = this;
+      const removeAll = {
+        content: text("✂️ 移除所有参考输入", "✂️ Remove all reference inputs"),
+        callback: () => clearAll(node),
+      };
+      const submenuOptions = singleRemoveSubmenu(node);
+      const removeOneMenu = {
+        content: text("移除单个参考输入", "Remove a reference input"),
+        has_submenu: true,
+        submenu: { options: submenuOptions },
+      };
+
+      options.push(null, removeAll, removeOneMenu);
+    } catch (error) {
+      console.warn("[Terry H3] Failed to append reference menu; default context menu is preserved.", error);
+    }
     return result;
   };
 }
