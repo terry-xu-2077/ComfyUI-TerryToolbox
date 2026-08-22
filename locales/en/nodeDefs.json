@@ -42,15 +42,15 @@
     "outputs": {"0": {"name": "H3 Prompt"}}
   },
   "TerryH3ShotTimeline": {
-    "display_name": "Terry H3 Shot Timeline",
-    "description": "Lightweight editor for MiniMax H3 detailed_description with multi-reference assets, tagged shot descriptions, shot ordering and duration editing, plus optional soundscape/music fields.",
+    "display_name": "Terry H3 Prompt Editor (Timeline)",
+    "description": "Timeline mode of Terry H3 Prompt Editor with multi-reference assets, tagged shot descriptions, shot ordering and duration editing, plus optional soundscape/music fields.",
     "inputs": {
       "compiled_prompt": {"name": "H3 Timeline Source"},
       "duration": {"name": "Total Duration"},
       "timeline_state": {"name": "Timeline State"},
       "asset": {"name": "Reference", "tooltip": "Connect IMAGE / VIDEO / AUDIO references."}
     },
-    "outputs": {"0": {"name": "H3 Timeline Prompt"}}
+    "outputs": {"0": {"name": "H3 Prompt"}}
   },
   "TerryWireBusPack": {
     "display_name": "Terry Wire Bus Pack",
